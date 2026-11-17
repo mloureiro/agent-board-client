@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Agent Board</title>
+  </head>
+  <body>
+    <main>
+      <h1>Servers</h1>
+
+      <ul id="servers" class="servers"></ul>
+      <p id="empty" class="empty" hidden>No servers yet. Add the address of a board below.</p>
+
+      <form id="add-server" class="add-server" novalidate>
+        <h2>Add a server</h2>
+        <label>
+          <span>Name</span>
+          <input id="server-name" name="name" type="text" autocomplete="off" required />
+        </label>
+        <label>
+          <span>Address</span>
+          <input
+            id="server-url"
+            name="url"
+            type="url"
+            inputmode="url"
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            placeholder="https://board.example.com"
+            required
+          />
+        </label>
+        <button type="submit" class="primary">Add server</button>
+      </form>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

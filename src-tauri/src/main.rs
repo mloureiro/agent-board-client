@@ -1,0 +1,62 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod board_window;
+mod commands;
+mod error;
+mod server_url;
+mod store;
+
+use tauri::{AppHandle, Manager, RunEvent};
+
+use crate::store::ServerStore;
+
+#[cfg(target_os = "macos")]
+fn show_server_list(app: &AppHandle) -> tauri::Result<()> {
+    const MAIN_WINDOW: &str = "main";
+
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
+        window.unminimize()?;
+        return window.set_focus();
+    }
+
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == MAIN_WINDOW)
+        .ok_or(tauri::Error::WindowNotFound)?;
+    tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn on_run_event(app: &AppHandle, event: RunEvent) {
+    if let RunEvent::Reopen { .. } = event {
+        if let Err(error) = show_server_list(app) {
+            eprintln!("could not show the server list: {error}");
+        }
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn on_run_event(_app: &AppHandle, _event: RunEvent) {}
+
+fn main() {
+    let app = tauri::Builder::default()
+        .setup(|app| {
+            let servers_file = app.path().app_config_dir()?.join("servers.json");
+            app.manage(ServerStore::new(servers_file));
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            commands::list_servers,
+            commands::add_server,
+            commands::remove_server,
+            commands::open_server,
+        ])
+        .build(tauri::generate_context!())
+        .expect("the app failed to start");
+
+    app.run(on_run_event);
+}
