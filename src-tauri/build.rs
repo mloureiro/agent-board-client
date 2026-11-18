@@ -5,6 +5,8 @@ fn main() {
         "remove_server",
         "rename_server",
         "open_server",
+        "failed_store_deletions",
+        "retry_store_deletion",
     ]);
 
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(app_manifest))

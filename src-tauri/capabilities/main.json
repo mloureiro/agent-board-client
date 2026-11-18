@@ -8,6 +8,10 @@
     "allow-add-server",
     "allow-remove-server",
     "allow-rename-server",
-    "allow-open-server"
+    "allow-open-server",
+    "allow-failed-store-deletions",
+    "allow-retry-store-deletion",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
   ]
 }

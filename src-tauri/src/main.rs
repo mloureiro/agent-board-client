@@ -5,10 +5,12 @@ mod commands;
 mod error;
 mod server_url;
 mod store;
+mod webview_store;
 
 use tauri::{AppHandle, Manager, RunEvent};
 
 use crate::store::ServerStore;
+use crate::webview_store::FailedDeletions;
 
 #[cfg(target_os = "macos")]
 fn show_server_list(app: &AppHandle) -> tauri::Result<()> {
@@ -46,7 +48,13 @@ fn main() {
     let app = tauri::Builder::default()
         .setup(|app| {
             let servers_file = app.path().app_config_dir()?.join("servers.json");
+            app.manage(FailedDeletions::default());
             app.manage(ServerStore::new(servers_file));
+
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                webview_store::sweep(&handle).await;
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -55,6 +63,8 @@ fn main() {
             commands::remove_server,
             commands::rename_server,
             commands::open_server,
+            commands::failed_store_deletions,
+            commands::retry_store_deletion,
         ])
         .build(tauri::generate_context!())
         .expect("the app failed to start");
