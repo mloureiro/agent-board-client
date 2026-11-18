@@ -5,6 +5,7 @@ fn main() {
         "remove_server",
         "set_server_notifications",
         "open_server",
+        "notify",
     ]);
 
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(app_manifest))

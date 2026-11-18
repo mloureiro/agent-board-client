@@ -14,4 +14,11 @@ export default defineConfig(
       },
     },
   },
+  {
+    files: ['src/board-notifications.js'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: { window: 'readonly', Event: 'readonly', EventTarget: 'readonly' },
+    },
+  },
 );

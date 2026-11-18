@@ -4,6 +4,7 @@ mod board_window;
 mod commands;
 mod error;
 mod list_window;
+mod notifications;
 mod server_url;
 mod store;
 mod tray;
@@ -17,12 +18,27 @@ fn on_window_event(window: &Window, event: &WindowEvent) {
         return;
     };
 
-    if window.label() == list_window::LABEL {
+    let hides =
+        window.label() == list_window::LABEL || board_window::stays_loaded_when_closed(window);
+    if hides {
         api.prevent_close();
         if let Err(error) = window.hide() {
-            eprintln!("could not hide the server list: {error}");
+            eprintln!("could not hide the window {}: {error}", window.label());
         }
     }
+}
+
+fn start_reporting(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    notifications::identify_as(&app.config().identifier);
+
+    match app.state::<ServerStore>().list() {
+        Ok(servers) => servers
+            .iter()
+            .for_each(|server| board_window::start_reporting(app, server)),
+        Err(error) => eprintln!("could not read the server list: {error:?}"),
+    }
+    board_window::keep_hidden_boards_awake(app.clone());
 }
 
 #[cfg(target_os = "macos")]
@@ -43,6 +59,7 @@ fn main() {
             let servers_file = app.path().app_config_dir()?.join("servers.json");
             app.manage(ServerStore::new(servers_file));
             tray::install(app.handle())?;
+            start_reporting(app.handle());
             Ok(())
         })
         .on_window_event(on_window_event)
@@ -52,6 +69,7 @@ fn main() {
             commands::remove_server,
             commands::set_server_notifications,
             commands::open_server,
+            notifications::notify,
         ])
         .build(tauri::generate_context!())
         .expect("the app failed to start");

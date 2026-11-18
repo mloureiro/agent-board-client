@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "The server list window, which shows only the bundled frontend. Board windows match no capability and no remote origin is listed, so a board page can invoke nothing.",
+  "description": "The server list window, which shows only the bundled frontend. A board window matches none of these. It gets one capability at runtime, limited to its server's origin and to the notify command.",
   "windows": ["main"],
   "permissions": [
     "allow-list-servers",

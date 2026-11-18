@@ -9,7 +9,13 @@ system's webview.
 - Each server gets its own persistent website data store, so sign-in cookies and the board's keys
   survive restarts and are never shared between servers.
 - The client stores the server list and nothing else: no token, key or password.
-- A board page cannot call the client's native commands. Only the server list window can.
+- A board page can call one native command: the one that asks the client to show a notification.
+  Every other command is open to the server list window only.
+- Notifications are shown by the client, never by a server. Each server has a switch in the list.
+  A board page that creates a `Notification` reaches the client, which shows it under the server's
+  name when that server's switch is on.
+- While a server's switch is on, its page stays loaded after its window closes, so it can keep
+  reporting. The app stays in the menu bar until you choose Quit there.
 
 macOS 14 or newer is required. Other platforms compile but are untested.
 
@@ -39,6 +45,7 @@ pnpm test           # vitest, cargo test
 ## Layout
 
 - `src/`: the server list window (TypeScript, no framework).
-- `src-tauri/`: the Rust core, with the server list file, the address rule and one window per
-  server.
+- `src/board-notifications.js`: the `Notification` every board page gets, injected by the Rust core.
+- `src-tauri/`: the Rust core, with the server list file, the address rule, one window per server,
+  the notification command and the menu-bar icon.
 - `fixtures/server-url-cases.json`: the address rule as a case table, run by both test suites.
