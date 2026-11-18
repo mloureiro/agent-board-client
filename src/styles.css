@@ -62,6 +62,7 @@ h2 {
 
 .server {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
@@ -73,10 +74,25 @@ h2 {
 
 .server-identity {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  flex: 1 1 18em;
+  min-width: 0;
+}
+
+.rename {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.rename-input {
+  flex: 1 1 8em;
   min-width: 0;
 }
 
 .server-name {
+  overflow-wrap: anywhere;
   font-weight: 600;
 }
 
@@ -91,6 +107,7 @@ h2 {
 
 .server-controls {
   display: flex;
+  margin-left: auto;
   flex-shrink: 0;
   gap: var(--space-2);
 }
