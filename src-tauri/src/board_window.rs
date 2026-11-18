@@ -45,9 +45,15 @@ fn route_new_window(app: &AppHandle, label: &str, id: Uuid, server_url: &Url, re
             }
         }
         LinkRoute::SystemBrowser => {
-            if let Err(error) = open::that_detached(requested.as_str()) {
-                eprintln!("could not open a link of server {id} in the system browser: {error}");
-            }
+            let target = requested.to_string();
+            std::thread::spawn(move || {
+                if let Err(error) = open::that_detached(target) {
+                    eprintln!(
+                        "could not open a link of server {id} in the system browser: {:?}",
+                        error.kind()
+                    );
+                }
+            });
         }
         LinkRoute::Drop => {}
     }
