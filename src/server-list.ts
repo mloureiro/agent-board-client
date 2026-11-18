@@ -1,4 +1,5 @@
-import type { Server } from './backend';
+import type { FailedDeletion, Server } from './backend';
+import { storeDeletionMessage } from './messages';
 
 export interface ServerListActions {
   readonly open: (server: Server) => void;
@@ -142,6 +143,37 @@ export function renderServerList(
   cancelActiveEdit = null;
   list.replaceChildren(...servers.map((server) => serverRow(server, actions)));
   emptyState.hidden = servers.length > 0;
+}
+
+function deletionRow(
+  failure: FailedDeletion,
+  retrying: boolean,
+  retry: (failure: FailedDeletion) => void,
+): HTMLLIElement {
+  const message = document.createElement('span');
+  message.textContent = storeDeletionMessage(failure.name);
+
+  const retryButton = button('Retry', 'primary', () => {
+    retry(failure);
+  });
+  retryButton.disabled = retrying;
+
+  const row = document.createElement('li');
+  row.className = 'deletion-error';
+  row.dataset.serverId = failure.id;
+  row.append(message, retryButton);
+  return row;
+}
+
+export function renderDeletionErrors(
+  container: HTMLElement,
+  failures: readonly FailedDeletion[],
+  retrying: ReadonlySet<string>,
+  retry: (failure: FailedDeletion) => void,
+): void {
+  container.replaceChildren(
+    ...failures.map((failure) => deletionRow(failure, retrying.has(failure.id), retry)),
+  );
 }
 
 export function focusRename(list: HTMLElement, serverId: string): void {

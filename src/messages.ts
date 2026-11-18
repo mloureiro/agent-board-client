@@ -27,3 +27,7 @@ export function failureMessage(failure: unknown): string {
       return `The server could not be opened: ${failure.message}`;
   }
 }
+
+export function storeDeletionMessage(name: string | null): string {
+  return `Couldn't delete the stored data of ${name ?? 'a removed server'}.`;
+}
