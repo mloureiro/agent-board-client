@@ -4,6 +4,7 @@ use uuid::Uuid;
 use crate::board_window;
 use crate::error::ClientError;
 use crate::store::{Server, ServerStore};
+use crate::webview_store::{self, FailedDeletion, FailedDeletions};
 
 #[tauri::command]
 pub fn list_servers(store: State<'_, ServerStore>) -> Result<Vec<Server>, ClientError> {
@@ -25,8 +26,31 @@ pub fn remove_server(
     store: State<'_, ServerStore>,
     id: Uuid,
 ) -> Result<(), ClientError> {
+    let name = store.find(id)?.name;
     store.remove(id)?;
-    board_window::close(&app, id)
+    board_window::close(&app, id)?;
+    tauri::async_runtime::spawn(async move {
+        webview_store::delete_with_retry(&app, id, Some(name)).await;
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn failed_store_deletions(failed: State<'_, FailedDeletions>) -> Vec<FailedDeletion> {
+    failed.list()
+}
+
+#[tauri::command]
+pub fn retry_store_deletion(
+    app: AppHandle,
+    failed: State<'_, FailedDeletions>,
+    id: Uuid,
+) -> Result<(), ClientError> {
+    let record = failed.find(id).ok_or(ClientError::NotFound)?;
+    tauri::async_runtime::spawn(async move {
+        webview_store::delete_with_retry(&app, id, record.name).await;
+    });
+    Ok(())
 }
 
 #[tauri::command]

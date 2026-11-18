@@ -1,6 +1,17 @@
-import { addServer, listServers, openServer, removeServer, renameServer } from './backend';
+import {
+  addServer,
+  failedStoreDeletions,
+  listServers,
+  onStoreDeletionFailed,
+  onStoreDeletionSucceeded,
+  openServer,
+  removeServer,
+  renameServer,
+  retryStoreDeletion,
+} from './backend';
+import type { FailedDeletion } from './backend';
 import { failureMessage, urlMessage } from './messages';
-import { focusRename, renderServerList } from './server-list';
+import { focusRename, renderDeletionErrors, renderServerList } from './server-list';
 import { checkServerUrl } from './server-url';
 import './styles.css';
 
@@ -10,6 +21,7 @@ function element<T extends HTMLElement>(id: string, type: new () => T): T {
   return found;
 }
 
+const deletionErrors = element('deletion-errors', HTMLUListElement);
 const list = element('servers', HTMLUListElement);
 const emptyState = element('empty', HTMLParagraphElement);
 const form = element('add-server', HTMLFormElement);
@@ -19,6 +31,42 @@ const status = element('status', HTMLParagraphElement);
 
 function report(message: string): void {
   status.textContent = message;
+}
+
+const failedDeletions = new Map<string, FailedDeletion>();
+const retrying = new Set<string>();
+
+function renderFailedDeletions(): void {
+  renderDeletionErrors(deletionErrors, [...failedDeletions.values()], retrying, (failure) => {
+    report('');
+    retrying.add(failure.id);
+    renderFailedDeletions();
+    retryStoreDeletion(failure.id).catch((error: unknown) => {
+      retrying.delete(failure.id);
+      renderFailedDeletions();
+      report(failureMessage(error));
+    });
+  });
+}
+
+function trackStoreDeletions(): Promise<void> {
+  return Promise.all([
+    onStoreDeletionFailed((failure) => {
+      retrying.delete(failure.id);
+      failedDeletions.set(failure.id, failure);
+      renderFailedDeletions();
+    }),
+    onStoreDeletionSucceeded((id) => {
+      retrying.delete(id);
+      failedDeletions.delete(id);
+      renderFailedDeletions();
+    }),
+  ]).then(async () => {
+    for (const failure of await failedStoreDeletions()) {
+      failedDeletions.set(failure.id, failure);
+    }
+    renderFailedDeletions();
+  });
 }
 
 async function refresh(): Promise<void> {
@@ -76,5 +124,9 @@ form.addEventListener('submit', (event) => {
 });
 
 refresh().catch((failure: unknown) => {
+  report(failureMessage(failure));
+});
+
+trackStoreDeletions().catch((failure: unknown) => {
   report(failureMessage(failure));
 });

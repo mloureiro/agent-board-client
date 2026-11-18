@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import type { ServerUrlError } from './server-url';
 
 export interface Server {
@@ -50,4 +51,29 @@ export function removeServer(id: string): Promise<void> {
 
 export function openServer(id: string): Promise<void> {
   return invoke('open_server', { id });
+}
+
+export interface FailedDeletion {
+  readonly id: string;
+  readonly name: string | null;
+}
+
+export function failedStoreDeletions(): Promise<FailedDeletion[]> {
+  return invoke<FailedDeletion[]>('failed_store_deletions');
+}
+
+export function retryStoreDeletion(id: string): Promise<void> {
+  return invoke('retry_store_deletion', { id });
+}
+
+export function onStoreDeletionFailed(handler: (failure: FailedDeletion) => void): Promise<void> {
+  return listen<FailedDeletion>('store-deletion-failed', (event) => {
+    handler(event.payload);
+  }).then(() => undefined);
+}
+
+export function onStoreDeletionSucceeded(handler: (id: string) => void): Promise<void> {
+  return listen<string>('store-deletion-succeeded', (event) => {
+    handler(event.payload);
+  }).then(() => undefined);
 }

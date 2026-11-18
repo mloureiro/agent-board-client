@@ -4,6 +4,8 @@ use uuid::Uuid;
 use crate::error::ClientError;
 use crate::server_url::check_server_url;
 use crate::store::Server;
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+use crate::webview_store;
 
 type BoardWindowBuilder<'a> = WebviewWindowBuilder<'a, Wry, AppHandle>;
 
@@ -26,12 +28,7 @@ fn with_own_storage<'a>(
     builder: BoardWindowBuilder<'a>,
     id: Uuid,
 ) -> tauri::Result<BoardWindowBuilder<'a>> {
-    let directory = app
-        .path()
-        .app_data_dir()?
-        .join("webviews")
-        .join(id.to_string());
-    Ok(builder.data_directory(directory))
+    Ok(builder.data_directory(webview_store::webviews_directory(app)?.join(id.to_string())))
 }
 
 pub fn open(app: &AppHandle, server: &Server) -> Result<(), ClientError> {

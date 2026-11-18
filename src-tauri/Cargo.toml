@@ -12,6 +12,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Before 2.11.1 a remote page could invoke every app command when no app manifest was declared.
 tauri = { version = "2.12", features = [] }
+tokio = { version = "1", features = ["time"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 
