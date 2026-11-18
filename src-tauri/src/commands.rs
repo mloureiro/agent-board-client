@@ -29,6 +29,18 @@ pub fn remove_server(
     board_window::close(&app, id)
 }
 
+#[tauri::command]
+pub fn rename_server(
+    app: AppHandle,
+    store: State<'_, ServerStore>,
+    id: Uuid,
+    name: String,
+) -> Result<Server, ClientError> {
+    let server = store.rename(id, &name)?;
+    board_window::retitle(&app, &server)?;
+    Ok(server)
+}
+
 // Tauri deadlocks on Windows when a window is created from a synchronous command.
 #[tauri::command]
 pub async fn open_server(

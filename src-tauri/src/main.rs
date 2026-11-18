@@ -53,6 +53,7 @@ fn main() {
             commands::list_servers,
             commands::add_server,
             commands::remove_server,
+            commands::rename_server,
             commands::open_server,
         ])
         .build(tauri::generate_context!())
