@@ -40,6 +40,10 @@ export function addServer(name: string, url: string): Promise<Server> {
   return invoke<Server>('add_server', { name, url });
 }
 
+export function renameServer(id: string, name: string): Promise<Server> {
+  return invoke<Server>('rename_server', { id, name });
+}
+
 export function removeServer(id: string): Promise<void> {
   return invoke('remove_server', { id });
 }

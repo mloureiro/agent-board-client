@@ -50,6 +50,13 @@ pub fn open(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
     Ok(())
 }
 
+pub fn retitle(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
+    if let Some(window) = app.get_webview_window(&label(server.id)) {
+        window.set_title(&server.name)?;
+    }
+    Ok(())
+}
+
 pub fn close(app: &AppHandle, id: Uuid) -> Result<(), ClientError> {
     if let Some(window) = app.get_webview_window(&label(id)) {
         window.destroy()?;

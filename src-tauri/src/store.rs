@@ -66,6 +66,24 @@ impl ServerStore {
         Ok(server)
     }
 
+    pub fn rename(&self, id: Uuid, name: &str) -> Result<Server, ClientError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(ClientError::Name);
+        }
+
+        let path = self.path();
+        let mut servers = read(&path)?;
+        let server = servers
+            .iter_mut()
+            .find(|server| server.id == id)
+            .ok_or(ClientError::NotFound)?;
+        name.clone_into(&mut server.name);
+        let renamed = server.clone();
+        write(&path, servers)?;
+        Ok(renamed)
+    }
+
     pub fn remove(&self, id: Uuid) -> Result<(), ClientError> {
         let path = self.path();
         let servers = read(&path)?;
@@ -163,6 +181,45 @@ mod tests {
 
         assert_eq!(store.list().unwrap(), vec![office]);
         assert!(matches!(store.find(home.id), Err(ClientError::NotFound)));
+    }
+
+    #[test]
+    fn a_renamed_server_is_read_back_by_a_new_store_with_the_same_id_and_address() {
+        let path = scratch_path();
+        let store = ServerStore::new(path.clone());
+        let home = store.add("Home", "http://localhost:4000").unwrap();
+        let office = store.add("Office", "https://board.example.com").unwrap();
+
+        let renamed = store.rename(home.id, "  Lab  ").unwrap();
+
+        assert_eq!(renamed.name, "Lab");
+        assert_eq!(renamed.id, home.id);
+        assert_eq!(renamed.url, home.url);
+        assert_eq!(
+            ServerStore::new(path).list().unwrap(),
+            vec![renamed, office]
+        );
+    }
+
+    #[test]
+    fn a_blank_name_is_rejected_on_rename_and_the_old_name_is_kept() {
+        let store = ServerStore::new(scratch_path());
+        let home = store.add("Home", "http://localhost:4000").unwrap();
+
+        let result = store.rename(home.id, "   ");
+
+        assert!(matches!(result, Err(ClientError::Name)));
+        assert_eq!(store.find(home.id).unwrap().name, "Home");
+    }
+
+    #[test]
+    fn renaming_an_unknown_server_reports_it() {
+        let store = ServerStore::new(scratch_path());
+
+        assert!(matches!(
+            store.rename(Uuid::new_v4(), "Lab"),
+            Err(ClientError::NotFound)
+        ));
     }
 
     #[test]
