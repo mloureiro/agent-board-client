@@ -9,6 +9,8 @@ system's webview.
 - Each server gets its own persistent website data store, so sign-in cookies and the board's keys
   survive restarts and are never shared between servers.
 - The client stores the server list and nothing else: no token, key or password.
+- Removing a server asks first, and offers to delete that server's data store too. If the data is
+  kept, adding the same address again finds it, sign-in and keys included.
 - A board page can call one native command: the one that asks the client to show a notification.
   Every other command is open to the server list window only.
 - Notifications are shown by the client, never by a server. Each server has a switch in the list.

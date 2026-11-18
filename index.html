@@ -38,6 +38,26 @@
 
       <p id="status" class="status" role="status" aria-live="polite"></p>
     </main>
+
+    <dialog id="remove-server" class="remove-server" aria-labelledby="remove-server-title">
+      <form method="dialog">
+        <h2 id="remove-server-title"></h2>
+        <label class="check">
+          <input id="remove-server-data" type="checkbox" />
+          <span>
+            Also delete this server's data stored on this computer (sign-in and sealing keys)
+          </span>
+        </label>
+        <p class="hint">
+          Without those keys, content sealed for this device may become unreadable from it. Nothing
+          on the server is deleted.
+        </p>
+        <div class="dialog-actions">
+          <button type="submit" value="cancel">Cancel</button>
+          <button type="submit" value="remove" class="danger">Remove</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

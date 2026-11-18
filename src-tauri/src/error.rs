@@ -10,6 +10,7 @@ pub enum ClientError {
     NotFound,
     Storage { message: String },
     Window { message: String },
+    StoredData { message: String },
 }
 
 impl From<ServerUrlError> for ClientError {

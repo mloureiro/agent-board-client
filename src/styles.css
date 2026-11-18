@@ -89,19 +89,67 @@ h2 {
   white-space: nowrap;
 }
 
-.server-notifications {
+.server-notifications,
+.check {
   display: flex;
-  align-items: center;
   gap: var(--space-2);
-  justify-self: start;
-  margin-top: var(--space-2);
   cursor: pointer;
 }
 
-.server-notifications input {
+.server-notifications {
+  align-items: center;
+  justify-self: start;
+  margin-top: var(--space-2);
+}
+
+:is(.server-notifications, .check) input {
+  flex-shrink: 0;
   margin: 0;
   padding: 0;
   accent-color: var(--accent);
+}
+
+.check {
+  align-items: flex-start;
+}
+
+.check input {
+  margin-top: 3px;
+}
+
+.check span {
+  color: inherit;
+  font-size: inherit;
+}
+
+.remove-server {
+  width: min(420px, calc(100vw - var(--space-8)));
+  padding: var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  color: inherit;
+}
+
+.remove-server::backdrop {
+  background: rgb(0 0 0 / 40%);
+}
+
+.remove-server form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 .server-controls {
@@ -169,7 +217,7 @@ button.quiet {
   color: var(--text-muted);
 }
 
-button.quiet[data-armed='true'] {
+button.danger {
   border-color: var(--danger);
   color: var(--danger);
 }

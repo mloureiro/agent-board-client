@@ -15,22 +15,6 @@ function button(label: string, className: string, onClick: () => void): HTMLButt
   return element;
 }
 
-function removeButton(server: Server, remove: (server: Server) => void): HTMLButtonElement {
-  const element = button('Remove', 'quiet', () => {
-    if (element.dataset.armed === 'true') {
-      remove(server);
-      return;
-    }
-    element.dataset.armed = 'true';
-    element.textContent = 'Confirm remove';
-  });
-  element.addEventListener('blur', () => {
-    delete element.dataset.armed;
-    element.textContent = 'Remove';
-  });
-  return element;
-}
-
 function notificationSwitch(
   server: Server,
   setNotifications: (server: Server, enabled: boolean) => void,
@@ -68,7 +52,9 @@ function serverRow(server: Server, actions: ServerListActions): HTMLLIElement {
   const controls = document.createElement('div');
   controls.className = 'server-controls';
   controls.append(
-    removeButton(server, actions.remove),
+    button('Remove', 'quiet', () => {
+      actions.remove(server);
+    }),
     button('Open', 'primary', () => {
       actions.open(server);
     }),

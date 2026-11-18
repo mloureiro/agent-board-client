@@ -4,8 +4,10 @@ import {
   openServer,
   removeServer,
   setServerNotifications,
+  type Server,
 } from './backend';
 import { failureMessage, urlMessage } from './messages';
+import { askToRemove } from './remove-dialog';
 import { renderServerList } from './server-list';
 import { checkServerUrl } from './server-url';
 import './styles.css';
@@ -22,9 +24,22 @@ const form = element('add-server', HTMLFormElement);
 const nameInput = element('server-name', HTMLInputElement);
 const urlInput = element('server-url', HTMLInputElement);
 const status = element('status', HTMLParagraphElement);
+const removeDialog = {
+  dialog: element('remove-server', HTMLDialogElement),
+  title: element('remove-server-title', HTMLHeadingElement),
+  deleteData: element('remove-server-data', HTMLInputElement),
+};
 
 function report(message: string): void {
   status.textContent = message;
+}
+
+async function remove(server: Server): Promise<void> {
+  const choice = await askToRemove(removeDialog, server);
+  if (!choice) return;
+
+  await removeServer(server.id, choice.deleteData);
+  await refresh();
 }
 
 async function refresh(): Promise<void> {
@@ -38,11 +53,9 @@ async function refresh(): Promise<void> {
     },
     remove: (server) => {
       report('');
-      removeServer(server.id)
-        .then(refresh)
-        .catch((failure: unknown) => {
-          report(failureMessage(failure));
-        });
+      remove(server).catch((failure: unknown) => {
+        report(failureMessage(failure));
+      });
     },
     setNotifications: (server, enabled) => {
       report('');

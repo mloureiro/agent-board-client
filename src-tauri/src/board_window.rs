@@ -33,17 +33,53 @@ fn with_own_storage<'a>(
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+fn data_directory(app: &AppHandle, id: Uuid) -> tauri::Result<std::path::PathBuf> {
+    Ok(app
+        .path()
+        .app_data_dir()?
+        .join("webviews")
+        .join(id.to_string()))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
 fn with_own_storage<'a>(
     app: &AppHandle,
     builder: BoardWindowBuilder<'a>,
     id: Uuid,
 ) -> tauri::Result<BoardWindowBuilder<'a>> {
-    let directory = app
-        .path()
-        .app_data_dir()?
-        .join("webviews")
-        .join(id.to_string());
-    Ok(builder.data_directory(directory))
+    Ok(builder.data_directory(data_directory(app, id)?))
+}
+
+fn stored_data_error(error: impl std::fmt::Display) -> ClientError {
+    ClientError::StoredData {
+        message: error.to_string(),
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+pub async fn delete_stored_data(app: &AppHandle, id: Uuid) -> Result<(), ClientError> {
+    let store = id.into_bytes();
+    let exists = app
+        .fetch_data_store_identifiers()
+        .await
+        .map_err(stored_data_error)?
+        .contains(&store);
+    if exists {
+        app.remove_data_store(store)
+            .await
+            .map_err(stored_data_error)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+pub async fn delete_stored_data(app: &AppHandle, id: Uuid) -> Result<(), ClientError> {
+    let directory = data_directory(app, id).map_err(stored_data_error)?;
+    match std::fs::remove_dir_all(directory) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(stored_data_error(error)),
+    }
 }
 
 fn build(app: &AppHandle, server: &Server, visible: bool) -> Result<WebviewWindow, ClientError> {

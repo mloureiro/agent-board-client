@@ -13,7 +13,8 @@ export type BackendError =
   | { readonly kind: 'url'; readonly reason: ServerUrlError }
   | { readonly kind: 'notFound' }
   | { readonly kind: 'storage'; readonly message: string }
-  | { readonly kind: 'window'; readonly message: string };
+  | { readonly kind: 'window'; readonly message: string }
+  | { readonly kind: 'storedData'; readonly message: string };
 
 const BACKEND_ERROR_KINDS: ReadonlySet<string> = new Set([
   'name',
@@ -21,6 +22,7 @@ const BACKEND_ERROR_KINDS: ReadonlySet<string> = new Set([
   'notFound',
   'storage',
   'window',
+  'storedData',
 ]);
 
 export function isBackendError(value: unknown): value is BackendError {
@@ -41,8 +43,8 @@ export function addServer(name: string, url: string): Promise<Server> {
   return invoke<Server>('add_server', { name, url });
 }
 
-export function removeServer(id: string): Promise<void> {
-  return invoke('remove_server', { id });
+export function removeServer(id: string, deleteData: boolean): Promise<void> {
+  return invoke('remove_server', { id, deleteData });
 }
 
 export function setServerNotifications(id: string, enabled: boolean): Promise<Server> {

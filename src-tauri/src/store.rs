@@ -30,9 +30,23 @@ pub struct Server {
     pub notifications: NotificationSettings,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StoredData {
+    Keep,
+    Delete,
+}
+
+#[derive(Serialize, Deserialize)]
+struct RetainedData {
+    id: Uuid,
+    url: Url,
+}
+
 #[derive(Default, Serialize, Deserialize)]
 struct ServerFile {
     servers: Vec<Server>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    retained_data: Vec<RetainedData>,
 }
 
 pub struct ServerStore {
@@ -51,7 +65,7 @@ impl ServerStore {
     }
 
     pub fn list(&self) -> Result<Vec<Server>, ClientError> {
-        Ok(read(&self.path())?)
+        Ok(read(&self.path())?.servers)
     }
 
     pub fn find(&self, id: Uuid) -> Result<Server, ClientError> {
@@ -66,66 +80,76 @@ impl ServerStore {
         if name.is_empty() {
             return Err(ClientError::Name);
         }
-        let server = Server {
-            id: Uuid::new_v4(),
-            name: name.to_owned(),
-            url: check_server_url(url)?,
-            notifications: NotificationSettings::default(),
-        };
+        let url = check_server_url(url)?;
 
         let path = self.path();
-        let mut servers = read(&path)?;
-        servers.push(server.clone());
-        write(&path, servers)?;
+        let mut file = read(&path)?;
+        let retained = file
+            .retained_data
+            .iter()
+            .position(|retained| retained.url == url)
+            .map(|position| file.retained_data.remove(position));
+        let server = Server {
+            id: retained.map_or_else(Uuid::new_v4, |retained| retained.id),
+            name: name.to_owned(),
+            url,
+            notifications: NotificationSettings::default(),
+        };
+        file.servers.push(server.clone());
+        write(&path, &file)?;
         Ok(server)
     }
 
     pub fn set_notifications(&self, id: Uuid, enabled: bool) -> Result<Server, ClientError> {
         let path = self.path();
-        let mut servers = read(&path)?;
-        let server = servers
+        let mut file = read(&path)?;
+        let server = file
+            .servers
             .iter_mut()
             .find(|server| server.id == id)
             .ok_or(ClientError::NotFound)?;
         server.notifications.enabled = enabled;
         let updated = server.clone();
 
-        write(&path, servers)?;
+        write(&path, &file)?;
         Ok(updated)
     }
 
-    pub fn remove(&self, id: Uuid) -> Result<(), ClientError> {
+    pub fn remove(&self, id: Uuid, stored_data: StoredData) -> Result<(), ClientError> {
         let path = self.path();
-        let servers = read(&path)?;
-        let kept: Vec<Server> = servers
+        let mut file = read(&path)?;
+        let position = file
+            .servers
             .iter()
-            .filter(|server| server.id != id)
-            .cloned()
-            .collect();
-        if kept.len() == servers.len() {
-            return Err(ClientError::NotFound);
+            .position(|server| server.id == id)
+            .ok_or(ClientError::NotFound)?;
+        let removed = file.servers.remove(position);
+        if stored_data == StoredData::Keep {
+            file.retained_data.push(RetainedData {
+                id: removed.id,
+                url: removed.url,
+            });
         }
 
-        write(&path, kept)?;
+        write(&path, &file)?;
         Ok(())
     }
 }
 
-fn read(path: &PathBuf) -> io::Result<Vec<Server>> {
+fn read(path: &PathBuf) -> io::Result<ServerFile> {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(ServerFile::default()),
         Err(error) => return Err(error),
     };
-    let file: ServerFile = serde_json::from_slice(&bytes).map_err(io::Error::other)?;
-    Ok(file.servers)
+    serde_json::from_slice(&bytes).map_err(io::Error::other)
 }
 
-fn write(path: &PathBuf, servers: Vec<Server>) -> io::Result<()> {
+fn write(path: &PathBuf, file: &ServerFile) -> io::Result<()> {
     if let Some(directory) = path.parent() {
         fs::create_dir_all(directory)?;
     }
-    let bytes = serde_json::to_vec_pretty(&ServerFile { servers }).map_err(io::Error::other)?;
+    let bytes = serde_json::to_vec_pretty(file).map_err(io::Error::other)?;
     let staged = path.with_extension("json.tmp");
     fs::write(&staged, bytes)?;
     fs::rename(staged, path)
@@ -187,7 +211,7 @@ mod tests {
         let home = store.add("Home", "http://localhost:4000").unwrap();
         let office = store.add("Office", "https://board.example.com").unwrap();
 
-        store.remove(home.id).unwrap();
+        store.remove(home.id, StoredData::Delete).unwrap();
 
         assert_eq!(store.list().unwrap(), vec![office]);
         assert!(matches!(store.find(home.id), Err(ClientError::NotFound)));
@@ -247,9 +271,59 @@ mod tests {
         let store = ServerStore::new(scratch_path());
 
         assert!(matches!(
-            store.remove(Uuid::new_v4()),
+            store.remove(Uuid::new_v4(), StoredData::Delete),
             Err(ClientError::NotFound)
         ));
+    }
+
+    #[test]
+    fn a_server_removed_with_its_data_kept_gets_the_same_id_when_its_address_returns() {
+        let path = scratch_path();
+        let store = ServerStore::new(path.clone());
+        let home = store.add("Home", "http://localhost:4000").unwrap();
+        store.remove(home.id, StoredData::Keep).unwrap();
+        assert_eq!(store.list().unwrap(), Vec::new());
+
+        let returned = ServerStore::new(path)
+            .add("Home again", "http://localhost:4000/")
+            .unwrap();
+
+        assert_eq!(returned.id, home.id);
+    }
+
+    #[test]
+    fn kept_data_is_handed_to_one_returning_server_only() {
+        let store = ServerStore::new(scratch_path());
+        let home = store.add("Home", "http://localhost:4000").unwrap();
+        store.remove(home.id, StoredData::Keep).unwrap();
+
+        let first = store.add("First", "http://localhost:4000").unwrap();
+        let second = store.add("Second", "http://localhost:4000").unwrap();
+
+        assert_eq!(first.id, home.id);
+        assert_ne!(second.id, home.id);
+    }
+
+    #[test]
+    fn kept_data_is_not_handed_to_another_address() {
+        let store = ServerStore::new(scratch_path());
+        let home = store.add("Home", "http://localhost:4000").unwrap();
+        store.remove(home.id, StoredData::Keep).unwrap();
+
+        let other = store.add("Other", "http://localhost:4000/other").unwrap();
+
+        assert_ne!(other.id, home.id);
+    }
+
+    #[test]
+    fn a_server_removed_with_its_data_deleted_gets_a_new_id_when_its_address_returns() {
+        let store = ServerStore::new(scratch_path());
+        let home = store.add("Home", "http://localhost:4000").unwrap();
+        store.remove(home.id, StoredData::Delete).unwrap();
+
+        let returned = store.add("Home", "http://localhost:4000").unwrap();
+
+        assert_ne!(returned.id, home.id);
     }
 
     #[test]

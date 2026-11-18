@@ -25,5 +25,7 @@ export function failureMessage(failure: unknown): string {
       return `The server list could not be saved: ${failure.message}`;
     case 'window':
       return `The server could not be opened: ${failure.message}`;
+    case 'storedData':
+      return `The server was kept, because its stored data could not be deleted: ${failure.message}`;
   }
 }
