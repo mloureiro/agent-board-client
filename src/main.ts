@@ -1,6 +1,6 @@
-import { addServer, listServers, openServer, removeServer } from './backend';
+import { addServer, listServers, openServer, removeServer, renameServer } from './backend';
 import { failureMessage, urlMessage } from './messages';
-import { renderServerList } from './server-list';
+import { focusRename, renderServerList } from './server-list';
 import { checkServerUrl } from './server-url';
 import './styles.css';
 
@@ -37,6 +37,18 @@ async function refresh(): Promise<void> {
         .catch((failure: unknown) => {
           report(failureMessage(failure));
         });
+    },
+    rename: async (server, name) => {
+      report('');
+      try {
+        await renameServer(server.id, name);
+        await refresh();
+        focusRename(list, server.id);
+        return true;
+      } catch (failure) {
+        report(failureMessage(failure));
+        return false;
+      }
     },
   });
 }
