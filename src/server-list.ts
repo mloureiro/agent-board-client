@@ -38,6 +38,7 @@ function serverRow(server: Server, actions: ServerListActions): HTMLLIElement {
   const url = document.createElement('span');
   url.className = 'server-url';
   url.textContent = server.url;
+  url.title = server.url;
 
   const identity = document.createElement('div');
   identity.className = 'server-identity';
