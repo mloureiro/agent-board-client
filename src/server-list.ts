@@ -3,6 +3,7 @@ import type { Server } from './backend';
 export interface ServerListActions {
   readonly open: (server: Server) => void;
   readonly remove: (server: Server) => void;
+  readonly setNotifications: (server: Server, enabled: boolean) => void;
 }
 
 function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
@@ -30,6 +31,26 @@ function removeButton(server: Server, remove: (server: Server) => void): HTMLBut
   return element;
 }
 
+function notificationSwitch(
+  server: Server,
+  setNotifications: (server: Server, enabled: boolean) => void,
+): HTMLLabelElement {
+  const input = document.createElement('input');
+  input.type = 'checkbox';
+  input.checked = server.notifications.enabled;
+  input.addEventListener('change', () => {
+    setNotifications(server, input.checked);
+  });
+
+  const caption = document.createElement('span');
+  caption.textContent = 'Notifications';
+
+  const element = document.createElement('label');
+  element.className = 'server-notifications';
+  element.append(input, caption);
+  return element;
+}
+
 function serverRow(server: Server, actions: ServerListActions): HTMLLIElement {
   const name = document.createElement('span');
   name.className = 'server-name';
@@ -42,7 +63,7 @@ function serverRow(server: Server, actions: ServerListActions): HTMLLIElement {
 
   const identity = document.createElement('div');
   identity.className = 'server-identity';
-  identity.append(name, url);
+  identity.append(name, url, notificationSwitch(server, actions.setNotifications));
 
   const controls = document.createElement('div');
   controls.className = 'server-controls';

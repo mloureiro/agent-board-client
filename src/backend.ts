@@ -5,6 +5,7 @@ export interface Server {
   readonly id: string;
   readonly name: string;
   readonly url: string;
+  readonly notifications: { readonly enabled: boolean };
 }
 
 export type BackendError =
@@ -42,6 +43,10 @@ export function addServer(name: string, url: string): Promise<Server> {
 
 export function removeServer(id: string): Promise<void> {
   return invoke('remove_server', { id });
+}
+
+export function setServerNotifications(id: string, enabled: boolean): Promise<Server> {
+  return invoke<Server>('set_server_notifications', { id, enabled });
 }
 
 export function openServer(id: string): Promise<void> {

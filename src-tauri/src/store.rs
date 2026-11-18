@@ -10,11 +10,24 @@ use uuid::Uuid;
 use crate::error::ClientError;
 use crate::server_url::check_server_url;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotificationSettings {
+    pub enabled: bool,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Server {
     pub id: Uuid,
     pub name: String,
     pub url: Url,
+    #[serde(default)]
+    pub notifications: NotificationSettings,
 }
 
 #[derive(Default, Serialize, Deserialize)]
@@ -57,6 +70,7 @@ impl ServerStore {
             id: Uuid::new_v4(),
             name: name.to_owned(),
             url: check_server_url(url)?,
+            notifications: NotificationSettings::default(),
         };
 
         let path = self.path();
@@ -64,6 +78,20 @@ impl ServerStore {
         servers.push(server.clone());
         write(&path, servers)?;
         Ok(server)
+    }
+
+    pub fn set_notifications(&self, id: Uuid, enabled: bool) -> Result<Server, ClientError> {
+        let path = self.path();
+        let mut servers = read(&path)?;
+        let server = servers
+            .iter_mut()
+            .find(|server| server.id == id)
+            .ok_or(ClientError::NotFound)?;
+        server.notifications.enabled = enabled;
+        let updated = server.clone();
+
+        write(&path, servers)?;
+        Ok(updated)
     }
 
     pub fn remove(&self, id: Uuid) -> Result<(), ClientError> {
@@ -163,6 +191,55 @@ mod tests {
 
         assert_eq!(store.list().unwrap(), vec![office]);
         assert!(matches!(store.find(home.id), Err(ClientError::NotFound)));
+    }
+
+    #[test]
+    fn a_new_server_has_notifications_on() {
+        let store = ServerStore::new(scratch_path());
+
+        let home = store.add("Home", "http://localhost:4000").unwrap();
+
+        assert!(home.notifications.enabled);
+    }
+
+    #[test]
+    fn an_entry_saved_without_the_setting_has_notifications_on() {
+        let path = scratch_path();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let id = Uuid::new_v4();
+        let saved = format!(
+            r#"{{"servers":[{{"id":"{id}","name":"Home","url":"http://localhost:4000/"}}]}}"#
+        );
+        fs::write(&path, saved).unwrap();
+
+        let home = ServerStore::new(path).find(id).unwrap();
+
+        assert!(home.notifications.enabled);
+    }
+
+    #[test]
+    fn switching_notifications_off_is_read_back_by_a_new_store() {
+        let path = scratch_path();
+        let store = ServerStore::new(path.clone());
+        let home = store.add("Home", "http://localhost:4000").unwrap();
+        let office = store.add("Office", "https://board.example.com").unwrap();
+
+        let updated = store.set_notifications(home.id, false).unwrap();
+
+        assert!(!updated.notifications.enabled);
+        let reread = ServerStore::new(path);
+        assert!(!reread.find(home.id).unwrap().notifications.enabled);
+        assert!(reread.find(office.id).unwrap().notifications.enabled);
+    }
+
+    #[test]
+    fn switching_notifications_on_an_unknown_server_reports_it() {
+        let store = ServerStore::new(scratch_path());
+
+        assert!(matches!(
+            store.set_notifications(Uuid::new_v4(), false),
+            Err(ClientError::NotFound)
+        ));
     }
 
     #[test]

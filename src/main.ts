@@ -1,4 +1,10 @@
-import { addServer, listServers, openServer, removeServer } from './backend';
+import {
+  addServer,
+  listServers,
+  openServer,
+  removeServer,
+  setServerNotifications,
+} from './backend';
 import { failureMessage, urlMessage } from './messages';
 import { renderServerList } from './server-list';
 import { checkServerUrl } from './server-url';
@@ -34,6 +40,17 @@ async function refresh(): Promise<void> {
       report('');
       removeServer(server.id)
         .then(refresh)
+        .catch((failure: unknown) => {
+          report(failureMessage(failure));
+        });
+    },
+    setNotifications: (server, enabled) => {
+      report('');
+      setServerNotifications(server.id, enabled)
+        .catch((failure: unknown) => {
+          report(failureMessage(failure));
+          return refresh();
+        })
         .catch((failure: unknown) => {
           report(failureMessage(failure));
         });

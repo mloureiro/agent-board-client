@@ -29,6 +29,15 @@ pub fn remove_server(
     board_window::close(&app, id)
 }
 
+#[tauri::command]
+pub fn set_server_notifications(
+    store: State<'_, ServerStore>,
+    id: Uuid,
+    enabled: bool,
+) -> Result<Server, ClientError> {
+    store.set_notifications(id, enabled)
+}
+
 // Tauri deadlocks on Windows when a window is created from a synchronous command.
 #[tauri::command]
 pub async fn open_server(

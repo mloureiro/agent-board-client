@@ -7,6 +7,7 @@
     "allow-list-servers",
     "allow-add-server",
     "allow-remove-server",
+    "allow-set-server-notifications",
     "allow-open-server"
   ]
 }

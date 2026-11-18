@@ -3,6 +3,7 @@ fn main() {
         "list_servers",
         "add_server",
         "remove_server",
+        "set_server_notifications",
         "open_server",
     ]);
 
