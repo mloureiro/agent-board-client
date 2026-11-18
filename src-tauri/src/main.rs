@@ -3,37 +3,32 @@
 mod board_window;
 mod commands;
 mod error;
+mod list_window;
 mod server_url;
 mod store;
+mod tray;
 
-use tauri::{AppHandle, Manager, RunEvent};
+use tauri::{AppHandle, Manager, RunEvent, Window, WindowEvent};
 
 use crate::store::ServerStore;
 
-#[cfg(target_os = "macos")]
-fn show_server_list(app: &AppHandle) -> tauri::Result<()> {
-    const MAIN_WINDOW: &str = "main";
+fn on_window_event(window: &Window, event: &WindowEvent) {
+    let WindowEvent::CloseRequested { api, .. } = event else {
+        return;
+    };
 
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        window.unminimize()?;
-        return window.set_focus();
+    if window.label() == list_window::LABEL {
+        api.prevent_close();
+        if let Err(error) = window.hide() {
+            eprintln!("could not hide the server list: {error}");
+        }
     }
-
-    let config = app
-        .config()
-        .app
-        .windows
-        .iter()
-        .find(|window| window.label == MAIN_WINDOW)
-        .ok_or(tauri::Error::WindowNotFound)?;
-    tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
-    Ok(())
 }
 
 #[cfg(target_os = "macos")]
 fn on_run_event(app: &AppHandle, event: RunEvent) {
     if let RunEvent::Reopen { .. } = event {
-        if let Err(error) = show_server_list(app) {
+        if let Err(error) = list_window::show(app) {
             eprintln!("could not show the server list: {error}");
         }
     }
@@ -47,8 +42,10 @@ fn main() {
         .setup(|app| {
             let servers_file = app.path().app_config_dir()?.join("servers.json");
             app.manage(ServerStore::new(servers_file));
+            tray::install(app.handle())?;
             Ok(())
         })
+        .on_window_event(on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::list_servers,
             commands::add_server,
