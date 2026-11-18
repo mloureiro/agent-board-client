@@ -3,6 +3,7 @@
 mod board_window;
 mod commands;
 mod error;
+mod link_route;
 mod server_url;
 mod store;
 mod webview_store;

@@ -14,4 +14,12 @@ export default defineConfig(
       },
     },
   },
+  {
+    files: ['src-tauri/scripts/*.js'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      sourceType: 'script',
+      globals: { window: 'readonly', location: 'readonly', Element: 'readonly', URL: 'readonly' },
+    },
+  },
 );
