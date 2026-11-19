@@ -1,0 +1,78 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      APPLE_SIGNING_IDENTITY: '-'
+      TARGET: universal-apple-darwin
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 10.29.3
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Read the app version
+        id: version
+        run: echo "value=$(node -p "require('./src-tauri/tauri.conf.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Check the tag matches the app version
+        if: github.ref_type == 'tag'
+        run: |
+          if [ "$GITHUB_REF_NAME" != "v${{ steps.version.outputs.value }}" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match tauri.conf.json version ${{ steps.version.outputs.value }}" >&2
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Build the release app
+        run: pnpm tauri build --target "$TARGET" --bundles app
+
+      - name: Build the debug app
+        run: pnpm tauri build --debug --target "$TARGET" --bundles app
+
+      - name: Zip the apps
+        run: |
+          mkdir -p out
+          ditto -c -k --keepParent "src-tauri/target/$TARGET/release/bundle/macos/Agent Board.app" "out/Agent-Board-${{ steps.version.outputs.value }}-macos-universal.zip"
+          ditto -c -k --keepParent "src-tauri/target/$TARGET/debug/bundle/macos/Agent Board.app" "out/Agent-Board-${{ steps.version.outputs.value }}-macos-universal-debug.zip"
+
+      - name: Upload the run artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: agent-board-macos
+          path: out/*.zip
+
+      - name: Publish the GitHub release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" out/*.zip --title "Agent Board ${{ steps.version.outputs.value }}" --generate-notes
