@@ -36,6 +36,21 @@ pnpm test           # vitest, cargo test
 
 `pnpm format` rewrites files in place.
 
+## Releases
+
+Pushing a tag `v<version>`, matching `version` in `src-tauri/tauri.conf.json`, runs
+`.github/workflows/release.yml`. It builds a universal macOS app, ad-hoc signed, in release and
+debug (the debug build has the Web Inspector), and attaches both as zips to a GitHub release.
+Running the workflow by hand builds the same zips as a run artifact, with no release.
+
+```sh
+gh release download v0.1.0 --repo mloureiro/agent-board-client --pattern '*.zip'
+ditto -x -k Agent-Board-0.1.0-macos-universal.zip .
+```
+
+A file downloaded with `gh` carries no quarantine flag. A zip downloaded in a browser does, and
+the unsigned app is then blocked; clear it with `xattr -dr com.apple.quarantine "Agent Board.app"`.
+
 ## Layout
 
 - `src/`: the server list window (TypeScript, no framework).
