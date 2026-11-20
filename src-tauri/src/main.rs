@@ -8,8 +8,10 @@ mod error;
 mod link_route;
 mod list_window;
 mod opened_url;
+mod sentinel;
 mod server_url;
 mod store;
+mod tabs;
 mod webview_store;
 
 use tauri::{AppHandle, Manager, RunEvent};
