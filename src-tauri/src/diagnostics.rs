@@ -6,10 +6,7 @@ use tauri::{AppHandle, Manager};
 
 const LOG_FILE: &str = "client.log";
 
-// An app started by LaunchServices has its stderr discarded, so failures also go to a file.
-pub fn record(app: &AppHandle, line: &str) {
-    eprintln!("{line}");
-
+fn append(app: &AppHandle, line: &str) {
     let Ok(directory) = app.path().app_log_dir() else {
         return;
     };
@@ -26,4 +23,19 @@ pub fn record(app: &AppHandle, line: &str) {
     {
         let _ = writeln!(file, "{seconds} {line}");
     }
+}
+
+// An app started by LaunchServices has its stderr discarded, so failures also go to a file.
+pub fn record(app: &AppHandle, line: &str) {
+    eprintln!("{line}");
+    append(app, line);
+}
+
+// The release profile aborts on panic, so the message must be written before the default hook returns.
+pub fn record_panics(app: AppHandle) {
+    let print = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        print(info);
+        append(&app, &format!("panic: {info}"));
+    }));
 }

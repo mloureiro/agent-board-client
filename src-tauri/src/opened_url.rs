@@ -40,6 +40,25 @@ impl OpenFailures {
     }
 }
 
+#[derive(Default)]
+pub struct EarlyLinks {
+    urls: Mutex<Vec<Url>>,
+}
+
+impl EarlyLinks {
+    fn urls(&self) -> MutexGuard<'_, Vec<Url>> {
+        self.urls.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    fn hold(&self, urls: &[Url]) {
+        self.urls().extend_from_slice(urls);
+    }
+
+    fn take(&self) -> Vec<Url> {
+        std::mem::take(&mut *self.urls())
+    }
+}
+
 fn local_board(urls: &[Url]) -> Option<Url> {
     urls.iter()
         .filter(|url| is_loopback(url))
@@ -78,7 +97,13 @@ async fn open(app: &AppHandle, url: Url) {
     }
 }
 
+// On a launch caused by a link, macOS delivers the link before the app's setup has run.
 pub fn handle(app: &AppHandle, urls: &[Url]) {
+    if app.try_state::<ServerStore>().is_none() {
+        app.state::<EarlyLinks>().hold(urls);
+        return;
+    }
+
     let accepted = local_board(urls);
     diagnostics::record(
         app,
@@ -101,6 +126,13 @@ pub fn handle(app: &AppHandle, urls: &[Url]) {
     tauri::async_runtime::spawn(async move {
         open(&app, url).await;
     });
+}
+
+pub fn handle_early_links(app: &AppHandle) {
+    let urls = app.state::<EarlyLinks>().take();
+    if !urls.is_empty() {
+        handle(app, &urls);
+    }
 }
 
 #[cfg(test)]

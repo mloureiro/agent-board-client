@@ -14,7 +14,7 @@ mod webview_store;
 
 use tauri::{AppHandle, Manager, RunEvent};
 
-use crate::opened_url::OpenFailures;
+use crate::opened_url::{EarlyLinks, OpenFailures};
 use crate::store::ServerStore;
 use crate::webview_store::FailedDeletions;
 
@@ -36,11 +36,14 @@ fn on_run_event(_app: &AppHandle, _event: RunEvent) {}
 
 fn main() {
     let app = tauri::Builder::default()
+        .manage(FailedDeletions::default())
+        .manage(OpenFailures::default())
+        .manage(EarlyLinks::default())
         .setup(|app| {
+            diagnostics::record_panics(app.handle().clone());
             let servers_file = app.path().app_config_dir()?.join("servers.json");
-            app.manage(FailedDeletions::default());
-            app.manage(OpenFailures::default());
             app.manage(ServerStore::new(servers_file));
+            opened_url::handle_early_links(app.handle());
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
