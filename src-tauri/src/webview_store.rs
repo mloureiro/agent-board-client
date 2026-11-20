@@ -4,13 +4,13 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 use crate::error::ClientError;
+use crate::list_window::announce;
 use crate::store::{Server, ServerStore};
 
-const MAIN_WINDOW: &str = "main";
 const DELETION_FAILED: &str = "store-deletion-failed";
 const DELETION_SUCCEEDED: &str = "store-deletion-succeeded";
 const RETRY_DELAYS: [Duration; 5] = [
@@ -116,12 +116,6 @@ pub async fn delete(app: &AppHandle, id: Uuid) -> Result<(), ClientError> {
     match std::fs::remove_dir_all(webviews_directory(app)?.join(id.to_string())) {
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
         _ => Ok(()),
-    }
-}
-
-fn announce<S: Serialize + Clone>(app: &AppHandle, event: &str, payload: S) {
-    if let Err(error) = app.emit_to(MAIN_WINDOW, event, payload) {
-        eprintln!("could not send {event} to the server list: {error}");
     }
 }
 

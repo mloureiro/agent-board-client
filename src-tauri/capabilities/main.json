@@ -9,6 +9,8 @@
     "allow-remove-server",
     "allow-rename-server",
     "allow-open-server",
+    "allow-test-server",
+    "allow-take-open-failure",
     "allow-failed-store-deletions",
     "allow-retry-store-deletion",
     "core:event:allow-listen",

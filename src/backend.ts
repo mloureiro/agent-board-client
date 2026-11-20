@@ -8,12 +8,19 @@ export interface Server {
   readonly url: string;
 }
 
+export type ConnectionFailure =
+  | { readonly kind: 'unreachable' }
+  | { readonly kind: 'timeout' }
+  | { readonly kind: 'status'; readonly status: number }
+  | { readonly kind: 'other'; readonly message: string };
+
 export type BackendError =
   | { readonly kind: 'name' }
   | { readonly kind: 'url'; readonly reason: ServerUrlError }
   | { readonly kind: 'notFound' }
   | { readonly kind: 'storage'; readonly message: string }
-  | { readonly kind: 'window'; readonly message: string };
+  | { readonly kind: 'window'; readonly message: string }
+  | { readonly kind: 'connection'; readonly reason: ConnectionFailure };
 
 const BACKEND_ERROR_KINDS: ReadonlySet<string> = new Set([
   'name',
@@ -21,6 +28,7 @@ const BACKEND_ERROR_KINDS: ReadonlySet<string> = new Set([
   'notFound',
   'storage',
   'window',
+  'connection',
 ]);
 
 export function isBackendError(value: unknown): value is BackendError {
@@ -51,6 +59,27 @@ export function removeServer(id: string): Promise<void> {
 
 export function openServer(id: string): Promise<void> {
   return invoke('open_server', { id });
+}
+
+export function testServer(id: string): Promise<void> {
+  return invoke('test_server', { id });
+}
+
+export interface OpenFailure {
+  readonly name: string;
+  readonly error: unknown;
+}
+
+export function takeOpenFailure(): Promise<OpenFailure | null> {
+  return invoke<OpenFailure | null>('take_open_failure');
+}
+
+export function onOpenFailed(handler: () => void): Promise<void> {
+  return listen('open-failed', handler).then(() => undefined);
+}
+
+export function onServersChanged(handler: () => void): Promise<void> {
+  return listen('servers-changed', handler).then(() => undefined);
 }
 
 export interface FailedDeletion {
