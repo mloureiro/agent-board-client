@@ -5,6 +5,7 @@ use tauri::{AppHandle, Manager};
 use url::Url;
 
 use crate::board_window;
+use crate::diagnostics;
 use crate::error::ClientError;
 use crate::list_window;
 use crate::server_url::{check_server_url, is_loopback};
@@ -46,7 +47,10 @@ fn local_board(urls: &[Url]) -> Option<Url> {
 }
 
 fn report(app: &AppHandle, name: String, error: ClientError) {
-    eprintln!("could not open the board of {name} from an opened link: {error:?}");
+    diagnostics::record(
+        app,
+        &format!("could not open the board of {name} from an opened link: {error:?}"),
+    );
     app.state::<OpenFailures>()
         .record(OpenFailure { name, error });
     if let Err(error) = list_window::show(app) {
@@ -65,13 +69,28 @@ async fn open(app: &AppHandle, url: Url) {
     };
     list_window::announce(app, SERVERS_CHANGED, ());
 
-    if let Err(error) = board_window::connect_and_open(app, &server).await {
-        report(app, server.name, error);
+    match board_window::connect_and_open(app, &server).await {
+        Ok(()) => diagnostics::record(
+            app,
+            &format!("opened server {} from an opened link", server.id),
+        ),
+        Err(error) => report(app, server.name, error),
     }
 }
 
 pub fn handle(app: &AppHandle, urls: &[Url]) {
-    let Some(url) = local_board(urls) else {
+    let accepted = local_board(urls);
+    diagnostics::record(
+        app,
+        &format!(
+            "received {} opened link(s), accepted: {}",
+            urls.len(),
+            accepted
+                .as_ref()
+                .map_or("none".to_owned(), |url| url.origin().ascii_serialization())
+        ),
+    );
+    let Some(url) = accepted else {
         if let Err(error) = list_window::show(app) {
             eprintln!("could not show the server list: {error}");
         }

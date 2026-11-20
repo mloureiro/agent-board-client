@@ -3,6 +3,7 @@
 mod board_window;
 mod commands;
 mod connection;
+mod diagnostics;
 mod error;
 mod link_route;
 mod list_window;

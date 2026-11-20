@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::board_window;
 use crate::connection;
+use crate::diagnostics;
 use crate::error::ClientError;
 use crate::opened_url::{OpenFailure, OpenFailures};
 use crate::store::{Server, ServerStore};
@@ -75,13 +76,25 @@ pub async fn open_server(
     id: Uuid,
 ) -> Result<(), ClientError> {
     let server = store.find(id)?;
-    board_window::connect_and_open(&app, &server).await
+    let opened = board_window::connect_and_open(&app, &server).await;
+    if let Err(error) = &opened {
+        diagnostics::record(&app, &format!("could not open server {id}: {error:?}"));
+    }
+    opened
 }
 
 #[tauri::command]
-pub async fn test_server(store: State<'_, ServerStore>, id: Uuid) -> Result<(), ClientError> {
+pub async fn test_server(
+    app: AppHandle,
+    store: State<'_, ServerStore>,
+    id: Uuid,
+) -> Result<(), ClientError> {
     let server = store.find(id)?;
-    Ok(connection::check(&server.url).await?)
+    let checked = connection::check(&server.url).await;
+    if let Err(failure) = &checked {
+        diagnostics::record(&app, &format!("test of server {id} failed: {failure:?}"));
+    }
+    Ok(checked?)
 }
 
 #[tauri::command]

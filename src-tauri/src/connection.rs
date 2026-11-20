@@ -24,9 +24,14 @@ impl From<reqwest::Error> for ConnectionFailure {
         if error.is_connect() {
             return Self::Unreachable;
         }
-        Self::Other {
-            message: error.to_string(),
+        let error = error.without_url();
+        let mut message = error.to_string();
+        let mut source = std::error::Error::source(&error);
+        while let Some(cause) = source {
+            message = format!("{message}: {cause}");
+            source = cause.source();
         }
+        Self::Other { message }
     }
 }
 
