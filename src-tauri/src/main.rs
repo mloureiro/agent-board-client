@@ -2,43 +2,32 @@
 
 mod board_window;
 mod commands;
+mod connection;
+mod diagnostics;
 mod error;
 mod link_route;
+mod list_window;
+mod opened_url;
 mod server_url;
 mod store;
 mod webview_store;
 
 use tauri::{AppHandle, Manager, RunEvent};
 
+use crate::opened_url::{EarlyLinks, OpenFailures};
 use crate::store::ServerStore;
 use crate::webview_store::FailedDeletions;
 
 #[cfg(target_os = "macos")]
-fn show_server_list(app: &AppHandle) -> tauri::Result<()> {
-    const MAIN_WINDOW: &str = "main";
-
-    if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
-        window.unminimize()?;
-        return window.set_focus();
-    }
-
-    let config = app
-        .config()
-        .app
-        .windows
-        .iter()
-        .find(|window| window.label == MAIN_WINDOW)
-        .ok_or(tauri::Error::WindowNotFound)?;
-    tauri::WebviewWindowBuilder::from_config(app, config)?.build()?;
-    Ok(())
-}
-
-#[cfg(target_os = "macos")]
 fn on_run_event(app: &AppHandle, event: RunEvent) {
-    if let RunEvent::Reopen { .. } = event {
-        if let Err(error) = show_server_list(app) {
-            eprintln!("could not show the server list: {error}");
+    match event {
+        RunEvent::Reopen { .. } => {
+            if let Err(error) = list_window::show(app) {
+                eprintln!("could not show the server list: {error}");
+            }
         }
+        RunEvent::Opened { urls } => opened_url::handle(app, &urls),
+        _ => {}
     }
 }
 
@@ -47,10 +36,14 @@ fn on_run_event(_app: &AppHandle, _event: RunEvent) {}
 
 fn main() {
     let app = tauri::Builder::default()
+        .manage(FailedDeletions::default())
+        .manage(OpenFailures::default())
+        .manage(EarlyLinks::default())
         .setup(|app| {
+            diagnostics::record_panics(app.handle().clone());
             let servers_file = app.path().app_config_dir()?.join("servers.json");
-            app.manage(FailedDeletions::default());
             app.manage(ServerStore::new(servers_file));
+            opened_url::handle_early_links(app.handle());
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -64,6 +57,8 @@ fn main() {
             commands::remove_server,
             commands::rename_server,
             commands::open_server,
+            commands::test_server,
+            commands::take_open_failure,
             commands::failed_store_deletions,
             commands::retry_store_deletion,
         ])

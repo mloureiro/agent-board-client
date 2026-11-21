@@ -2,7 +2,8 @@ import type { FailedDeletion, Server } from './backend';
 import { storeDeletionMessage } from './messages';
 
 export interface ServerListActions {
-  readonly open: (server: Server) => void;
+  readonly test: (server: Server) => Promise<void>;
+  readonly open: (server: Server) => Promise<void>;
   readonly remove: (server: Server) => void;
   readonly rename: (server: Server, name: string) => Promise<boolean>;
 }
@@ -15,6 +16,23 @@ function button(label: string, className: string, onClick: () => void): HTMLButt
   element.className = className;
   element.textContent = label;
   element.addEventListener('click', onClick);
+  return element;
+}
+
+function pendingButton(
+  label: string,
+  pendingLabel: string,
+  className: string,
+  run: () => Promise<void>,
+): HTMLButtonElement {
+  const element = button(label, className, () => {
+    element.disabled = true;
+    element.textContent = pendingLabel;
+    void run().finally(() => {
+      element.disabled = false;
+      element.textContent = label;
+    });
+  });
   return element;
 }
 
@@ -122,9 +140,8 @@ function serverRow(server: Server, actions: ServerListActions): HTMLLIElement {
   controls.append(
     renameButton,
     removeButton(server, actions.remove),
-    button('Open', 'primary', () => {
-      actions.open(server);
-    }),
+    pendingButton('Test', 'Testing…', '', () => actions.test(server)),
+    pendingButton('Open', 'Connecting…', 'primary', () => actions.open(server)),
   );
 
   const row = document.createElement('li');

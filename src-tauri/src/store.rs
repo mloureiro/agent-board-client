@@ -66,6 +66,26 @@ impl ServerStore {
         Ok(server)
     }
 
+    pub fn find_or_add(&self, name: &str, url: &Url) -> Result<Server, ClientError> {
+        let path = self.path();
+        let mut servers = read(&path)?;
+        if let Some(found) = servers
+            .iter()
+            .find(|server| server.url.origin() == url.origin())
+        {
+            return Ok(found.clone());
+        }
+
+        let server = Server {
+            id: Uuid::new_v4(),
+            name: name.to_owned(),
+            url: check_server_url(url.as_str())?,
+        };
+        servers.push(server.clone());
+        write(&path, servers)?;
+        Ok(server)
+    }
+
     pub fn rename(&self, id: Uuid, name: &str) -> Result<Server, ClientError> {
         let name = name.trim();
         if name.is_empty() {
@@ -181,6 +201,34 @@ mod tests {
 
         assert_eq!(store.list().unwrap(), vec![office]);
         assert!(matches!(store.find(home.id), Err(ClientError::NotFound)));
+    }
+
+    #[test]
+    fn find_or_add_returns_the_stored_server_with_the_same_origin() {
+        let store = ServerStore::new(scratch_path());
+        let local = store.add("Local", "http://127.0.0.1:4785").unwrap();
+
+        let found = store
+            .find_or_add("Other", &Url::parse("http://127.0.0.1:4785/board").unwrap())
+            .unwrap();
+
+        assert_eq!(found, local);
+        assert_eq!(store.list().unwrap(), vec![local]);
+    }
+
+    #[test]
+    fn find_or_add_adds_a_server_on_a_new_origin() {
+        let path = scratch_path();
+        let store = ServerStore::new(path.clone());
+        let local = store.add("Local", "http://127.0.0.1:4785").unwrap();
+
+        let added = store
+            .find_or_add("Local", &Url::parse("http://127.0.0.1:4786/").unwrap())
+            .unwrap();
+
+        assert_ne!(added.id, local.id);
+        assert_eq!(added.url.as_str(), "http://127.0.0.1:4786/");
+        assert_eq!(ServerStore::new(path).list().unwrap(), vec![local, added]);
     }
 
     #[test]

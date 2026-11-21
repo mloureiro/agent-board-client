@@ -1,8 +1,9 @@
 use serde::Serialize;
 
+use crate::connection::ConnectionFailure;
 use crate::server_url::ServerUrlError;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ClientError {
     Name,
@@ -10,11 +11,18 @@ pub enum ClientError {
     NotFound,
     Storage { message: String },
     Window { message: String },
+    Connection { reason: ConnectionFailure },
 }
 
 impl From<ServerUrlError> for ClientError {
     fn from(reason: ServerUrlError) -> Self {
         Self::Url { reason }
+    }
+}
+
+impl From<ConnectionFailure> for ClientError {
+    fn from(reason: ConnectionFailure) -> Self {
+        Self::Connection { reason }
     }
 }
 

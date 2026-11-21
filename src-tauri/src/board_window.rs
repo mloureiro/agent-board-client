@@ -3,6 +3,7 @@ use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, Wry};
 use url::Url;
 use uuid::Uuid;
 
+use crate::connection;
 use crate::error::ClientError;
 use crate::link_route::{self, LinkRoute};
 use crate::server_url::check_server_url;
@@ -82,6 +83,13 @@ pub fn open(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
         });
     with_own_storage(app, builder, server.id)?.build()?;
     Ok(())
+}
+
+pub async fn connect_and_open(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
+    if app.get_webview_window(&label(server.id)).is_none() {
+        connection::check(&server.url).await?;
+    }
+    open(app, server)
 }
 
 pub fn retitle(app: &AppHandle, server: &Server) -> Result<(), ClientError> {

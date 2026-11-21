@@ -2,12 +2,16 @@ import {
   addServer,
   failedStoreDeletions,
   listServers,
+  onOpenFailed,
+  onServersChanged,
   onStoreDeletionFailed,
   onStoreDeletionSucceeded,
   openServer,
   removeServer,
   renameServer,
   retryStoreDeletion,
+  takeOpenFailure,
+  testServer,
 } from './backend';
 import type { FailedDeletion } from './backend';
 import { failureMessage, urlMessage } from './messages';
@@ -29,8 +33,30 @@ const nameInput = element('server-name', HTMLInputElement);
 const urlInput = element('server-url', HTMLInputElement);
 const status = element('status', HTMLParagraphElement);
 
+const callout = element('callout', HTMLDivElement);
+const calloutMessage = element('callout-message', HTMLParagraphElement);
+const calloutDismiss = element('callout-dismiss', HTMLButtonElement);
+
 function report(message: string): void {
   status.textContent = message;
+}
+
+function showCallout(tone: 'ok' | 'error', message: string): void {
+  callout.dataset.tone = tone;
+  calloutMessage.textContent = message;
+  callout.hidden = false;
+}
+
+function hideCallout(): void {
+  callout.hidden = true;
+}
+
+calloutDismiss.addEventListener('click', hideCallout);
+
+async function showOpenFailure(): Promise<void> {
+  const failure = await takeOpenFailure();
+  if (failure === null) return;
+  showCallout('error', `${failure.name} couldn't be opened. ${failureMessage(failure.error)}`);
 }
 
 const failedDeletions = new Map<string, FailedDeletion>();
@@ -72,11 +98,24 @@ function trackStoreDeletions(): Promise<void> {
 async function refresh(): Promise<void> {
   const servers = await listServers();
   renderServerList(list, emptyState, servers, {
-    open: (server) => {
+    test: async (server) => {
       report('');
-      openServer(server.id).catch((failure: unknown) => {
-        report(failureMessage(failure));
-      });
+      hideCallout();
+      try {
+        await testServer(server.id);
+        showCallout('ok', `${server.name} answered. It can be opened.`);
+      } catch (failure) {
+        showCallout('error', `${server.name} can't be reached. ${failureMessage(failure)}`);
+      }
+    },
+    open: async (server) => {
+      report('');
+      hideCallout();
+      try {
+        await openServer(server.id);
+      } catch (failure) {
+        showCallout('error', `${server.name} couldn't be opened. ${failureMessage(failure)}`);
+      }
     },
     remove: (server) => {
       report('');
@@ -123,9 +162,20 @@ form.addEventListener('submit', (event) => {
   });
 });
 
-refresh().catch((failure: unknown) => {
+function reportFailure(failure: unknown): void {
   report(failureMessage(failure));
-});
+}
+
+Promise.all([
+  onServersChanged(() => {
+    refresh().catch(reportFailure);
+  }),
+  onOpenFailed(() => {
+    showOpenFailure().catch(reportFailure);
+  }),
+])
+  .then(() => Promise.all([refresh(), showOpenFailure()]))
+  .catch(reportFailure);
 
 trackStoreDeletions().catch((failure: unknown) => {
   report(failureMessage(failure));

@@ -5,6 +5,8 @@ fn main() {
         "remove_server",
         "rename_server",
         "open_server",
+        "test_server",
+        "take_open_failure",
         "failed_store_deletions",
         "retry_store_deletion",
     ]);

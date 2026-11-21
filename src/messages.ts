@@ -1,4 +1,5 @@
 import { isBackendError } from './backend';
+import type { ConnectionFailure } from './backend';
 import type { ServerUrlError } from './server-url';
 
 const URL_MESSAGES: Record<ServerUrlError, string> = {
@@ -9,6 +10,19 @@ const URL_MESSAGES: Record<ServerUrlError, string> = {
 
 export function urlMessage(error: ServerUrlError): string {
   return URL_MESSAGES[error];
+}
+
+function connectionMessage(failure: ConnectionFailure): string {
+  switch (failure.kind) {
+    case 'unreachable':
+      return 'Nothing answered at this address. Check that the server is running.';
+    case 'timeout':
+      return 'The server did not answer in time.';
+    case 'status':
+      return `The server answered with an error (HTTP ${String(failure.status)}).`;
+    case 'other':
+      return `The connection failed: ${failure.message}`;
+  }
 }
 
 export function failureMessage(failure: unknown): string {
@@ -25,6 +39,8 @@ export function failureMessage(failure: unknown): string {
       return `The server list could not be saved: ${failure.message}`;
     case 'window':
       return `The server could not be opened: ${failure.message}`;
+    case 'connection':
+      return connectionMessage(failure.reason);
   }
 }
 

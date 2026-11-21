@@ -2,7 +2,10 @@ use tauri::{AppHandle, State};
 use uuid::Uuid;
 
 use crate::board_window;
+use crate::connection;
+use crate::diagnostics;
 use crate::error::ClientError;
+use crate::opened_url::{OpenFailure, OpenFailures};
 use crate::store::{Server, ServerStore};
 use crate::webview_store::{self, FailedDeletion, FailedDeletions};
 
@@ -72,5 +75,29 @@ pub async fn open_server(
     store: State<'_, ServerStore>,
     id: Uuid,
 ) -> Result<(), ClientError> {
-    board_window::open(&app, &store.find(id)?)
+    let server = store.find(id)?;
+    let opened = board_window::connect_and_open(&app, &server).await;
+    if let Err(error) = &opened {
+        diagnostics::record(&app, &format!("could not open server {id}: {error:?}"));
+    }
+    opened
+}
+
+#[tauri::command]
+pub async fn test_server(
+    app: AppHandle,
+    store: State<'_, ServerStore>,
+    id: Uuid,
+) -> Result<(), ClientError> {
+    let server = store.find(id)?;
+    let checked = connection::check(&server.url).await;
+    if let Err(failure) = &checked {
+        diagnostics::record(&app, &format!("test of server {id} failed: {failure:?}"));
+    }
+    Ok(checked?)
+}
+
+#[tauri::command]
+pub fn take_open_failure(failures: State<'_, OpenFailures>) -> Option<OpenFailure> {
+    failures.take()
 }

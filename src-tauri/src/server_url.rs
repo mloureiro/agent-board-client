@@ -19,6 +19,10 @@ fn accepts_plain_http(host: &Host<&str>) -> bool {
     }
 }
 
+pub fn is_loopback(url: &Url) -> bool {
+    url.host().is_some_and(|host| accepts_plain_http(&host))
+}
+
 pub fn check_server_url(input: &str) -> Result<Url, ServerUrlError> {
     let trimmed = input.trim();
     if trimmed.chars().any(char::is_whitespace) {

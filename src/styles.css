@@ -9,6 +9,7 @@
   --accent: light-dark(#1f5fbf, #7fb0ff);
   --accent-text: light-dark(#ffffff, #10151c);
   --danger: light-dark(#b3261e, #ff9a92);
+  --success: light-dark(#2e7d32, #8fd694);
 
   --space-1: 4px;
   --space-2: 8px;
@@ -84,6 +85,33 @@ h2 {
   background: var(--surface-raised);
   color: var(--danger);
   overflow-wrap: anywhere;
+}
+
+.callout {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--danger);
+  border-left-width: 4px;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  overflow-wrap: anywhere;
+}
+
+.callout[hidden] {
+  display: none;
+}
+
+.callout[data-tone='ok'] {
+  border-color: var(--success);
+}
+
+.callout-message {
+  margin: 0;
+  padding-top: var(--space-2);
 }
 
 .server {
