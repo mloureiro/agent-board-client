@@ -15,7 +15,8 @@ use crate::sentinel::{self, Signal};
 use crate::server_url::check_server_url;
 use crate::store::Server;
 use crate::tab_session::{self, TabSessions};
-use crate::tabs::HOME;
+use crate::tab_state;
+use crate::tabs::{TabSession, HOME};
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use crate::webview_store;
 
@@ -205,7 +206,10 @@ fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), Client
         .inner_size(1280.0, 860.0)
         .build()?;
 
-    app.state::<TabSessions>().insert(id);
+    let saved = tab_state::restore(tab_state::read(app, id));
+    let selected = saved.selected;
+    app.state::<TabSessions>()
+        .insert(id, TabSession::restored(&saved));
 
     let layout_app = app.clone();
     window.on_window_event(move |event| match event {
@@ -228,6 +232,9 @@ fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), Client
 
     let built = add_tab_bar(&window, id)
         .and_then(|()| add_board_webview(app, &window, id, &url, HOME, url.clone()));
+    if built.is_ok() && selected != HOME {
+        let _ = tab_session::apply(app, id, |session| session.select(selected));
+    }
     if built.is_err() {
         let _ = window.destroy();
     }

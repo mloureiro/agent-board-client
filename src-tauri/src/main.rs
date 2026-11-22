@@ -13,6 +13,7 @@ mod sentinel;
 mod server_url;
 mod store;
 mod tab_session;
+mod tab_state;
 mod tabs;
 mod webview_store;
 
@@ -53,6 +54,7 @@ fn main() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 webview_store::sweep(&handle).await;
+                tab_state::sweep(&handle).await;
             });
             Ok(())
         })

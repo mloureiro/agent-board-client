@@ -13,7 +13,7 @@ pub fn is_sentinel(url: &Url) -> bool {
     url.scheme() == SCHEME
 }
 
-fn is_plain_path(path: &str) -> bool {
+pub fn is_plain_path(path: &str) -> bool {
     path.starts_with('/')
         && !path.starts_with("//")
         && !path.contains('\\')

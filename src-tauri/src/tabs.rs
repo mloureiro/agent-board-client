@@ -52,6 +52,8 @@ pub fn page_of(path: &str) -> Route {
 
 use serde::Serialize;
 
+use crate::tab_state::{SavedTab, SavedTabs};
+
 pub const HOME: u64 = 0;
 pub const MAX_TABS: usize = 20;
 const HOME_LABEL: &str = "Board";
@@ -106,6 +108,50 @@ impl Default for TabSession {
 }
 
 impl TabSession {
+    /// Expects `saved` to have passed `tab_state::restore`. Every tab starts unloaded and 🏠 is
+    /// selected; selecting the saved tab afterwards loads it. Saved tab `n` gets id `n`.
+    pub fn restored(saved: &SavedTabs) -> Self {
+        let tabs: Vec<Tab> = saved
+            .tabs
+            .iter()
+            .zip(1..)
+            .filter_map(|(entry, id)| match page_of(&entry.path) {
+                Route::Page(page) => Some(Tab {
+                    id,
+                    path: entry.path.clone(),
+                    page,
+                    label: entry.label.clone(),
+                    loaded: false,
+                }),
+                _ => None,
+            })
+            .collect();
+        Self {
+            next_id: tabs.len() as u64 + 1,
+            tabs,
+            selected: HOME,
+        }
+    }
+
+    pub fn saved(&self) -> SavedTabs {
+        let selected = self
+            .tabs
+            .iter()
+            .position(|tab| tab.id == self.selected)
+            .map_or(HOME, |index| index as u64 + 1);
+        SavedTabs {
+            selected,
+            tabs: self
+                .tabs
+                .iter()
+                .map(|tab| SavedTab {
+                    path: tab.path.clone(),
+                    label: tab.label.clone(),
+                })
+                .collect(),
+        }
+    }
+
     pub fn open(&mut self, path: &str) -> Vec<Effect> {
         let page = match page_of(path) {
             Route::Home => return self.select(HOME),
@@ -558,6 +604,41 @@ mod tests {
                     home: false
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn saves_the_selection_by_position_and_restores_it_lazily() {
+        let mut open = session(&["/backlog", "/closed", "/settings"], HOME, &[]);
+        open.close(1);
+        open.select(3);
+
+        let saved = open.saved();
+        assert_eq!(saved.selected, 2);
+        assert_eq!(
+            saved
+                .tabs
+                .iter()
+                .map(|tab| tab.path.as_str())
+                .collect::<Vec<_>>(),
+            ["/closed", "/settings"]
+        );
+
+        let mut restored = TabSession::restored(&saved);
+        assert_eq!(restored.view().selected, HOME);
+        assert_eq!(
+            restored.select(saved.selected),
+            vec![
+                Effect::Load(2, "/settings".to_owned()),
+                Effect::Hide(HOME),
+                Effect::Show(2),
+                Effect::Changed,
+            ]
+        );
+        assert_eq!(restored.saved(), saved);
+        assert_eq!(
+            restored.open("/t/9").first(),
+            Some(&Effect::Load(3, "/t/9".to_owned()))
         );
     }
 }
