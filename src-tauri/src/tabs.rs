@@ -57,6 +57,19 @@ use crate::tab_state::{SavedTab, SavedTabs};
 pub const HOME: u64 = 0;
 pub const MAX_TABS: usize = 20;
 const HOME_LABEL: &str = "Board";
+const BOARD_TITLE: &str = "Agent Board";
+const TITLE_SUFFIX: &str = " · Agent Board";
+const MAX_LABEL_CHARS: usize = 200;
+
+pub fn label_from_title(title: &str) -> Option<String> {
+    if title == BOARD_TITLE {
+        return None;
+    }
+    let name = title.strip_suffix(TITLE_SUFFIX).unwrap_or(title);
+    let label: String = name.trim().chars().take(MAX_LABEL_CHARS).collect();
+    let label = label.trim_end();
+    (!label.is_empty()).then(|| label.to_owned())
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tab {
@@ -206,18 +219,31 @@ impl TabSession {
                 effects
             }
             Route::Page(page) => {
-                let label = page.path_label();
                 let current = &mut self.tabs[index];
-                if current.path == path && current.page == page && current.label == label {
+                if current.path == path && current.page == page {
                     return Vec::new();
+                }
+                if current.page != page {
+                    page.path_label().clone_into(&mut current.label);
                 }
                 current.path = path.to_owned();
                 current.page = page;
-                label.clone_into(&mut current.label);
                 vec![Effect::Changed]
             }
             Route::Other => Vec::new(),
         }
+    }
+
+    pub fn title(&mut self, tab: u64, title: &str) -> Vec<Effect> {
+        let Some(current) = self.tabs.iter_mut().find(|candidate| candidate.id == tab) else {
+            return Vec::new();
+        };
+        let label = label_from_title(title).unwrap_or_else(|| current.page.path_label().to_owned());
+        if current.label == label {
+            return Vec::new();
+        }
+        current.label = label;
+        vec![Effect::Changed]
     }
 
     pub fn select(&mut self, tab: u64) -> Vec<Effect> {
@@ -380,6 +406,7 @@ mod tests {
         CloseSelected,
         SelectNth(u8),
         Cycle(bool),
+        Title(u64, &'static str),
     }
 
     fn session(paths: &[&str], selected: u64, unloaded: &[u64]) -> TabSession {
@@ -651,6 +678,38 @@ mod tests {
                 vec!["/backlog", "/closed"],
             ),
             (
+                "title a tab",
+                session(&["/t/1"], 1, &[]),
+                Op::Title(1, "Fix login · Agent Board"),
+                vec![Changed],
+                1,
+                vec!["/t/1"],
+            ),
+            (
+                "title a tab that does not exist",
+                session(&["/t/1"], 1, &[]),
+                Op::Title(9, "Fix login"),
+                vec![],
+                1,
+                vec!["/t/1"],
+            ),
+            (
+                "title home",
+                session(&["/t/1"], 0, &[]),
+                Op::Title(0, "Fix login"),
+                vec![],
+                0,
+                vec!["/t/1"],
+            ),
+            (
+                "title a tab with the static board title",
+                session(&["/t/1"], 1, &[]),
+                Op::Title(1, "Agent Board"),
+                vec![],
+                1,
+                vec!["/t/1"],
+            ),
+            (
                 "cycle with only home",
                 session(&[], 0, &[]),
                 Op::Cycle(true),
@@ -669,11 +728,70 @@ mod tests {
                 Op::CloseSelected => session.close_selected(),
                 Op::SelectNth(n) => session.select_nth(n),
                 Op::Cycle(next) => session.cycle(next),
+                Op::Title(tab, title) => session.title(tab, title),
             };
 
             assert_eq!(actual, effects, "{name}: effects");
             assert_eq!(session.selected, selected, "{name}: selected");
             assert_eq!(paths(&session), remaining, "{name}: tabs");
+        }
+    }
+
+    fn label_of(session: &TabSession, tab: u64) -> &str {
+        &session.tabs.iter().find(|t| t.id == tab).unwrap().label
+    }
+
+    #[test]
+    fn reports_a_title_once_and_falls_back_to_the_path_label() {
+        let mut session = session(&["/t/1"], 1, &[]);
+
+        assert_eq!(session.title(1, "Fix login"), vec![Effect::Changed]);
+        assert_eq!(session.title(1, "Fix login · Agent Board"), vec![]);
+        assert_eq!(label_of(&session, 1), "Fix login");
+
+        assert_eq!(session.title(1, "Agent Board"), vec![Effect::Changed]);
+        assert_eq!(label_of(&session, 1), "Task");
+    }
+
+    #[test]
+    fn replaces_a_title_with_the_path_label_when_the_tab_goes_to_another_page() {
+        let mut session = session(&["/t/1"], 1, &[]);
+        session.title(1, "Fix login");
+
+        session.route(1, "/backlog");
+
+        assert_eq!(label_of(&session, 1), "Backlog");
+    }
+
+    #[test]
+    fn keeps_a_title_when_the_same_page_finishes_loading() {
+        let mut session = session(&["/t/1"], 1, &[]);
+        session.title(1, "Fix login");
+
+        assert_eq!(session.route(1, "/t/1"), vec![]);
+        assert_eq!(session.route(1, "/t/1?transcript=1"), vec![Effect::Changed]);
+        assert_eq!(label_of(&session, 1), "Fix login");
+    }
+
+    #[test]
+    fn derives_a_label_from_a_page_title() {
+        let long = "x".repeat(500);
+        let cases: Vec<(&str, Option<String>)> = vec![
+            ("Agent Board", None),
+            ("", None),
+            ("Settings · Agent Board", Some("Settings".into())),
+            (
+                "Fix the login · bug · Agent Board",
+                Some("Fix the login · bug".into()),
+            ),
+            ("  Spaced  · Agent Board", Some("Spaced".into())),
+            (" · Agent Board", None),
+            ("   ", None),
+            ("Some other site", Some("Some other site".into())),
+            (&long, Some("x".repeat(200))),
+        ];
+        for (title, expected) in cases {
+            assert_eq!(label_from_title(title), expected, "{title:?}");
         }
     }
 
