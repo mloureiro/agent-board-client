@@ -678,14 +678,6 @@ mod tests {
                 vec!["/backlog", "/closed"],
             ),
             (
-                "title a tab",
-                session(&["/t/1"], 1, &[]),
-                Op::Title(1, "Fix login · Agent Board"),
-                vec![Changed],
-                1,
-                vec!["/t/1"],
-            ),
-            (
                 "title a tab that does not exist",
                 session(&["/t/1"], 1, &[]),
                 Op::Title(9, "Fix login"),
@@ -761,6 +753,15 @@ mod tests {
         session.route(1, "/backlog");
 
         assert_eq!(label_of(&session, 1), "Backlog");
+    }
+
+    #[test]
+    fn drops_a_title_when_the_tab_moves_to_another_task() {
+        let mut session = session(&["/t/1"], 1, &[]);
+        session.title(1, "Fix login");
+
+        assert_eq!(session.route(1, "/t/2"), vec![Effect::Changed]);
+        assert_eq!(label_of(&session, 1), "Task");
     }
 
     #[test]

@@ -149,10 +149,7 @@ fn board_builder(
             }
         })
         .on_document_title_changed(move |_webview, title| {
-            let app = title_app.clone();
-            tauri::async_runtime::spawn(async move {
-                let _ = tab_session::apply(&app, id, |session| session.title(tab, &title));
-            });
+            let _ = tab_session::apply(&title_app, id, |session| session.title(tab, &title));
         })
 }
 
