@@ -17,6 +17,7 @@ export default defineConfig(
   {
     files: ['src-tauri/scripts/*.js'],
     extends: [tseslint.configs.disableTypeChecked],
+    rules: { '@typescript-eslint/no-unused-expressions': 'off' },
     languageOptions: {
       sourceType: 'script',
       globals: { window: 'readonly', location: 'readonly', Element: 'readonly', URL: 'readonly' },

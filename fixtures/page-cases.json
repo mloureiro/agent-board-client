@@ -1,0 +1,19 @@
+[
+  { "path": "/", "route": "home", "page": null, "label": null },
+  { "path": "/backlog", "route": "page", "page": "backlog", "label": "Backlog" },
+  { "path": "/backlog/", "route": "page", "page": "backlog", "label": "Backlog" },
+  { "path": "/schedules", "route": "page", "page": "schedules", "label": "Schedules" },
+  { "path": "/closed", "route": "page", "page": "closed", "label": "Closed" },
+  { "path": "/settings", "route": "page", "page": "settings", "label": "Settings" },
+  { "path": "/settings/machines", "route": "page", "page": "settings", "label": "Settings" },
+  { "path": "/settings/agents", "route": "page", "page": "settings", "label": "Settings" },
+  { "path": "/t/k3J9", "route": "page", "page": "task:k3J9", "label": "Task" },
+  { "path": "/t/k3J9/", "route": "page", "page": "task:k3J9", "label": "Task" },
+  { "path": "/t/k3J9?transcript=1", "route": "page", "page": "task:k3J9", "label": "Task" },
+  { "path": "/t/", "route": "other", "page": null, "label": null },
+  { "path": "/t/a/b", "route": "other", "page": null, "label": null },
+  { "path": "/login/oidc", "route": "other", "page": null, "label": null },
+  { "path": "/login/saml", "route": "other", "page": null, "label": null },
+  { "path": "/nope", "route": "other", "page": null, "label": null },
+  { "path": "/backlogx", "route": "other", "page": null, "label": null }
+]
