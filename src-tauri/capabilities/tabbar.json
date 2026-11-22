@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "tabbar",
+  "description": "The tab bar of a server window. It must stay matched by webview label only: Tauri also grants a command when the window label matches, so a window match would hand these commands to every board page in that window.",
+  "webviews": ["tabbar-*"],
+  "permissions": [
+    "allow-tabs-snapshot",
+    "allow-select-tab",
+    "allow-close-tab",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

@@ -9,6 +9,9 @@ fn main() {
         "take_open_failure",
         "failed_store_deletions",
         "retry_store_deletion",
+        "tabs_snapshot",
+        "select_tab",
+        "close_tab",
     ]);
 
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(app_manifest))

@@ -1,4 +1,4 @@
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, Webview};
 use uuid::Uuid;
 
 use crate::board_window;
@@ -7,6 +7,8 @@ use crate::diagnostics;
 use crate::error::ClientError;
 use crate::opened_url::{OpenFailure, OpenFailures};
 use crate::store::{Server, ServerStore};
+use crate::tab_session::{self, TabSessions};
+use crate::tabs::{TabSession, TabsView, HOME};
 use crate::webview_store::{self, FailedDeletion, FailedDeletions};
 
 #[tauri::command]
@@ -100,4 +102,58 @@ pub async fn test_server(
 #[tauri::command]
 pub fn take_open_failure(failures: State<'_, OpenFailures>) -> Option<OpenFailure> {
     failures.take()
+}
+
+fn server_of_tabbar(label: &str) -> Option<Uuid> {
+    let id = Uuid::parse_str(label.strip_prefix("tabbar-")?).ok()?;
+    (tab_session::tabbar_label(id) == label).then_some(id)
+}
+
+#[tauri::command]
+pub fn tabs_snapshot(
+    webview: Webview,
+    sessions: State<'_, TabSessions>,
+) -> Result<TabsView, ClientError> {
+    let server = server_of_tabbar(webview.label()).ok_or(ClientError::NotFound)?;
+    sessions.view(server)
+}
+
+#[tauri::command]
+pub fn select_tab(app: AppHandle, webview: Webview, tab: u64) -> Result<(), ClientError> {
+    let server = server_of_tabbar(webview.label()).ok_or(ClientError::NotFound)?;
+    tab_session::apply(&app, server, |session: &mut TabSession| session.select(tab))
+}
+
+#[tauri::command]
+pub fn close_tab(app: AppHandle, webview: Webview, tab: u64) -> Result<(), ClientError> {
+    let server = server_of_tabbar(webview.label()).ok_or(ClientError::NotFound)?;
+    if tab == HOME {
+        return Ok(());
+    }
+    tab_session::apply(&app, server, |session: &mut TabSession| session.close(tab))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_only_the_label_of_a_tab_bar() {
+        let id = "0b0c3c1e-5a64-4a41-8f1a-6a0a2d2a9b11";
+        let cases = [
+            (format!("tabbar-{id}"), Some(Uuid::parse_str(id).ok())),
+            (format!("board-{id}-home"), None),
+            (format!("board-{id}-1"), None),
+            (format!("server-{id}"), None),
+            ("main".to_owned(), None),
+            ("tabbar-nonsense".to_owned(), None),
+            ("tabbar-".to_owned(), None),
+            (format!("tabbar-{}", id.replace('-', "")), None),
+            (format!("tabbar-{}", id.to_uppercase()), None),
+        ];
+
+        for (label, expected) in cases {
+            assert_eq!(server_of_tabbar(&label), expected.flatten(), "{label}");
+        }
+    }
 }
