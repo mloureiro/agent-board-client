@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::board_window;
 use crate::error::ClientError;
 use crate::store::ServerStore;
+use crate::tab_state::{self, SavedTabs};
 use crate::tabs::{Effect, TabSession, TabsView};
 
 const TABS_CHANGED: &str = "tabs-changed";
@@ -16,6 +17,7 @@ struct Batch {
     server: Uuid,
     effects: Vec<Effect>,
     view: TabsView,
+    saved: SavedTabs,
 }
 
 pub struct TabSessions {
@@ -28,8 +30,20 @@ impl TabSessions {
         self.sessions.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    pub fn insert(&self, server: Uuid) {
-        self.sessions().insert(server, TabSession::default());
+    pub fn insert(&self, server: Uuid, session: TabSession) {
+        self.sessions().insert(server, session);
+    }
+
+    /// Holds the lock across the write so that removing a session, then deleting its file,
+    /// cannot be followed by a late write recreating the file.
+    fn persist(&self, server: Uuid, app: &AppHandle, saved: &SavedTabs) {
+        let sessions = self.sessions();
+        if !sessions.contains_key(&server) {
+            return;
+        }
+        if let Err(error) = tab_state::write(app, server, saved) {
+            eprintln!("server {server}: saved tabs could not be written: {error:?}");
+        }
     }
 
     pub fn remove(&self, server: Uuid) {
@@ -79,10 +93,12 @@ pub fn apply(
     }
 
     let view = session.view();
+    let saved = session.saved();
     let queued = sessions.queue.send(Batch {
         server,
         effects,
         view,
+        saved,
     });
     if queued.is_err() {
         eprintln!("server {server}: tab effects could not be queued");
@@ -95,6 +111,7 @@ fn perform(app: &AppHandle, batch: Batch) {
         server,
         effects,
         view,
+        saved,
     } = batch;
 
     for effect in effects {
@@ -130,6 +147,7 @@ fn perform(app: &AppHandle, batch: Batch) {
                 if let Err(error) = app.emit_to(target, TABS_CHANGED, &view) {
                     eprintln!("server {server}: the tab bar could not be updated: {error}");
                 }
+                app.state::<TabSessions>().persist(server, app, &saved);
             }
             Effect::LimitReached => eprintln!("server {server}: tab limit reached"),
         }

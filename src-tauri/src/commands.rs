@@ -8,6 +8,7 @@ use crate::error::ClientError;
 use crate::opened_url::{OpenFailure, OpenFailures};
 use crate::store::{Server, ServerStore};
 use crate::tab_session::{self, TabSessions};
+use crate::tab_state;
 use crate::tabs::{TabSession, TabsView, HOME};
 use crate::webview_store::{self, FailedDeletion, FailedDeletions};
 
@@ -33,7 +34,11 @@ pub fn remove_server(
 ) -> Result<(), ClientError> {
     let name = store.find(id)?.name;
     store.remove(id)?;
-    board_window::close(&app, id)?;
+    let closed = board_window::close(&app, id);
+    if let Err(error) = tab_state::delete(&app, id) {
+        eprintln!("server {id}: saved tabs could not be deleted: {error:?}");
+    }
+    closed?;
     tauri::async_runtime::spawn(async move {
         webview_store::delete_with_retry(&app, id, Some(name)).await;
     });
