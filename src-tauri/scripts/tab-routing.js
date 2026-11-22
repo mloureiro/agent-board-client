@@ -31,9 +31,31 @@
     return url.origin === win.location.origin ? url : null;
   }
 
-  function send(verb, url) {
-    win.location.href =
-      'agent-board-client:' + verb + '?path=' + encodeURIComponent(url.pathname + url.search);
+  const pending = [];
+  let draining = false;
+
+  function drain() {
+    try {
+      win.location.href = pending.shift();
+    } finally {
+      if (pending.length > 0) {
+        win.setTimeout(drain, 0);
+      } else {
+        draining = false;
+      }
+    }
+  }
+
+  function send(href) {
+    pending.push(href);
+    if (!draining) {
+      draining = true;
+      win.setTimeout(drain, 0);
+    }
+  }
+
+  function sendPath(verb, url) {
+    send('agent-board-client:' + verb + '?path=' + encodeURIComponent(url.pathname + url.search));
   }
 
   function wrap(method, handler) {
@@ -63,7 +85,7 @@
         if (url === null || classify(url.pathname) !== 'page') {
           return false;
         }
-        send('open', url);
+        sendPath('open', url);
         return true;
       },
       after() {},
@@ -74,13 +96,13 @@
         if (url === null || classify(url.pathname) !== 'home') {
           return false;
         }
-        send('route', url);
+        sendPath('route', url);
         return true;
       },
       after(target) {
         const url = resolve(target);
         if (url !== null) {
-          send('route', url);
+          sendPath('route', url);
         }
       },
     },
@@ -97,7 +119,7 @@
         return;
       }
       event.preventDefault();
-      win.location.href = 'agent-board-client:cycle?dir=' + (event.shiftKey ? 'previous' : 'next');
+      send('agent-board-client:cycle?dir=' + (event.shiftKey ? 'previous' : 'next'));
     },
     true,
   );
@@ -107,7 +129,7 @@
   }
 
   win.addEventListener('popstate', function () {
-    send('route', win.location);
+    sendPath('route', win.location);
   });
 
   function SilentNotification() {
@@ -127,4 +149,10 @@
     return Promise.resolve('granted');
   };
   win.Notification = SilentNotification;
+
+  if (win.ServiceWorkerRegistration) {
+    win.ServiceWorkerRegistration.prototype.showNotification = function () {
+      return Promise.resolve(undefined);
+    };
+  }
 });
