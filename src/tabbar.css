@@ -47,7 +47,7 @@ body {
 }
 
 .tab:hover {
-  background: var(--surface-raised);
+  background: var(--surface-hover);
   color: var(--text);
 }
 

@@ -19,6 +19,7 @@
   --space-8: 32px;
   --radius: 8px;
 
+  --surface-hover: light-dark(#ebe9e4, #222427);
   --surface-selected: light-dark(#ffffff, #2c2f33);
 
   --tabbar-height: 36px;

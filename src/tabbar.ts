@@ -60,7 +60,7 @@ function render(view: TabsView): void {
       close.className = 'tab-close';
       close.tabIndex = -1;
       close.textContent = '×';
-      close.setAttribute('aria-label', 'Close tab');
+      close.setAttribute('aria-label', `Close ${tab.label}`);
       close.addEventListener('click', () => {
         closeTab(tab.id).catch(logFailure('close_tab'));
       });
