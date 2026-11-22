@@ -16,17 +16,31 @@ interface FakeWindow {
     pushState: (...args: unknown[]) => unknown;
     replaceState: (...args: unknown[]) => unknown;
   };
-  location: { origin: string; href: string };
+  location: { origin: string; href: string; pathname: string; search: string };
+  addEventListener: (type: string, listener: () => void) => void;
+  EventTarget: typeof EventTarget;
+  Notification?: {
+    permission: string;
+    requestPermission: (callback?: (permission: string) => void) => Promise<string>;
+    new (title: string): EventTarget & { close: () => void };
+  };
 }
 
 function setup(role = 'home') {
   const original = { pushState: vi.fn(), replaceState: vi.fn() };
   const assigned: string[] = [];
+  const listeners: Record<string, (() => void)[]> = {};
   const win: FakeWindow = {
     URL,
+    EventTarget,
+    addEventListener: (type, listener) => {
+      (listeners[type] ??= []).push(listener);
+    },
     history: { ...original },
     location: {
       origin: ORIGIN,
+      pathname: '/t/current',
+      search: '?transcript=1',
       get href() {
         return `${ORIGIN}/`;
       },
@@ -36,7 +50,12 @@ function setup(role = 'home') {
     },
   };
   (runInNewContext(script) as Install)(role, win);
-  return { win, original, assigned };
+  const fire = (type: string) => {
+    listeners[type]?.forEach((listener) => {
+      listener();
+    });
+  };
+  return { win, original, assigned, fire };
 }
 
 describe('tab-routing home role', () => {
@@ -91,11 +110,70 @@ describe('tab-routing home role', () => {
     });
   });
 
-  it('leaves history untouched in the tab role', () => {
-    const { win, original } = setup('tab');
+  it('leaves Notification alone', () => {
+    const { win } = setup();
 
-    win.history.pushState(null, '', '/backlog');
+    expect(win.Notification).toBeUndefined();
+  });
+});
 
-    expect(original.pushState).toHaveBeenCalledTimes(1);
+describe('tab-routing tab role', () => {
+  describe.each(['pushState', 'replaceState'] as const)('%s', (method) => {
+    it.each(['/', '/?x=1'])('swallows the home target %s and reports it', (path) => {
+      const { win, original, assigned } = setup('tab');
+
+      win.history[method](null, '', path);
+
+      expect(assigned).toEqual([`agent-board-client:route?path=${encodeURIComponent(path)}`]);
+      expect(original[method]).not.toHaveBeenCalled();
+    });
+
+    it('calls the original for a page, then reports it', () => {
+      const { win, original, assigned } = setup('tab');
+      original[method].mockImplementation(() => {
+        expect(assigned).toEqual([]);
+      });
+
+      win.history[method](null, '', '/t/other?transcript=1');
+
+      expect(original[method]).toHaveBeenCalledTimes(1);
+      expect(assigned).toEqual([
+        `agent-board-client:route?path=${encodeURIComponent('/t/other?transcript=1')}`,
+      ]);
+    });
+
+    it('does not report a call with no target or a cross-origin one', () => {
+      const { win, original, assigned } = setup('tab');
+
+      win.history[method](null, '');
+      win.history[method](null, '', 'https://other.example.com/');
+
+      expect(original[method]).toHaveBeenCalledTimes(2);
+      expect(assigned).toEqual([]);
+    });
+  });
+
+  it('reports the new location on popstate', () => {
+    const { assigned, fire } = setup('tab');
+
+    fire('popstate');
+
+    expect(assigned).toEqual([
+      `agent-board-client:route?path=${encodeURIComponent('/t/current?transcript=1')}`,
+    ]);
+  });
+
+  it('replaces Notification with one that is granted and shows nothing', async () => {
+    const { win } = setup('tab');
+    const Stand = win.Notification;
+    const callback = vi.fn();
+
+    expect(Stand?.permission).toBe('granted');
+    await expect(Stand?.requestPermission(callback)).resolves.toBe('granted');
+    expect(callback).toHaveBeenCalledWith('granted');
+    expect(() => {
+      const shown = new (Stand as NonNullable<typeof Stand>)('title');
+      shown.close();
+    }).not.toThrow();
   });
 });
