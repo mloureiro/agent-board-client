@@ -272,6 +272,40 @@ impl TabSession {
         effects
     }
 
+    pub fn close_selected(&mut self) -> Vec<Effect> {
+        self.close(self.selected)
+    }
+
+    pub fn select_nth(&mut self, n: u8) -> Vec<Effect> {
+        match usize::from(n) {
+            0 => Vec::new(),
+            1 => self.select(HOME),
+            position => match self.tabs.get(position - 2) {
+                Some(tab) => {
+                    let id = tab.id;
+                    self.select(id)
+                }
+                None => Vec::new(),
+            },
+        }
+    }
+
+    pub fn cycle(&mut self, next: bool) -> Vec<Effect> {
+        let order: Vec<u64> = std::iter::once(HOME)
+            .chain(self.tabs.iter().map(|tab| tab.id))
+            .collect();
+        let current = order
+            .iter()
+            .position(|id| *id == self.selected)
+            .unwrap_or(0);
+        let target = if next {
+            (current + 1) % order.len()
+        } else {
+            (current + order.len() - 1) % order.len()
+        };
+        self.select(order[target])
+    }
+
     pub fn view(&self) -> TabsView {
         let home = TabView {
             id: HOME,
@@ -343,6 +377,9 @@ mod tests {
         Route(u64, &'static str),
         Select(u64),
         Close(u64),
+        CloseSelected,
+        SelectNth(u8),
+        Cycle(bool),
     }
 
     fn session(paths: &[&str], selected: u64, unloaded: &[u64]) -> TabSession {
@@ -557,6 +594,70 @@ mod tests {
                 0,
                 vec!["/backlog"],
             ),
+            (
+                "close the selected tab from the keyboard",
+                session(&["/backlog", "/closed"], 1, &[]),
+                Op::CloseSelected,
+                vec![Destroy(1), Show(2), Changed],
+                2,
+                vec!["/closed"],
+            ),
+            (
+                "close the selected tab from the keyboard with home selected",
+                session(&["/backlog"], 0, &[]),
+                Op::CloseSelected,
+                vec![],
+                0,
+                vec!["/backlog"],
+            ),
+            (
+                "select the first position",
+                session(&["/backlog"], 1, &[]),
+                Op::SelectNth(1),
+                vec![Hide(1), Show(0), Changed],
+                0,
+                vec!["/backlog"],
+            ),
+            (
+                "select the third position",
+                session(&["/backlog", "/closed"], 0, &[]),
+                Op::SelectNth(3),
+                vec![Hide(0), Show(2), Changed],
+                2,
+                vec!["/backlog", "/closed"],
+            ),
+            (
+                "select a position past the last tab",
+                session(&["/backlog", "/closed"], 0, &[]),
+                Op::SelectNth(9),
+                vec![],
+                0,
+                vec!["/backlog", "/closed"],
+            ),
+            (
+                "cycle forward from the last tab",
+                session(&["/backlog", "/closed"], 2, &[]),
+                Op::Cycle(true),
+                vec![Hide(2), Show(0), Changed],
+                0,
+                vec!["/backlog", "/closed"],
+            ),
+            (
+                "cycle back from home",
+                session(&["/backlog", "/closed"], 0, &[]),
+                Op::Cycle(false),
+                vec![Hide(0), Show(2), Changed],
+                2,
+                vec!["/backlog", "/closed"],
+            ),
+            (
+                "cycle with only home",
+                session(&[], 0, &[]),
+                Op::Cycle(true),
+                vec![],
+                0,
+                vec![],
+            ),
         ];
 
         for (name, mut session, op, effects, selected, remaining) in cases {
@@ -565,6 +666,9 @@ mod tests {
                 Op::Route(tab, path) => session.route(tab, path),
                 Op::Select(tab) => session.select(tab),
                 Op::Close(tab) => session.close(tab),
+                Op::CloseSelected => session.close_selected(),
+                Op::SelectNth(n) => session.select_nth(n),
+                Op::Cycle(next) => session.cycle(next),
             };
 
             assert_eq!(actual, effects, "{name}: effects");
