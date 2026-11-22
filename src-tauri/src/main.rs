@@ -11,6 +11,7 @@ mod list_window;
 mod opened_url;
 mod sentinel;
 mod server_url;
+mod shortcuts;
 mod store;
 mod tab_session;
 mod tab_state;
@@ -41,6 +42,8 @@ fn on_run_event(_app: &AppHandle, _event: RunEvent) {}
 
 fn main() {
     let app = tauri::Builder::default()
+        .menu(shortcuts::menu)
+        .on_menu_event(shortcuts::handle)
         .manage(FailedDeletions::default())
         .manage(OpenFailures::default())
         .manage(EarlyLinks::default())

@@ -7,6 +7,7 @@ const MAX_PATH_BYTES: usize = 2048;
 pub enum Signal {
     Open(String),
     Route(String),
+    Cycle(bool),
 }
 
 pub fn is_sentinel(url: &Url) -> bool {
@@ -23,6 +24,14 @@ pub fn is_plain_path(path: &str) -> bool {
 pub fn parse(url: &Url) -> Option<Signal> {
     if !is_sentinel(url) {
         return None;
+    }
+
+    if url.path() == "cycle" {
+        return match url.query_pairs().find(|(key, _)| key == "dir")?.1.as_ref() {
+            "next" => Some(Signal::Cycle(true)),
+            "previous" => Some(Signal::Cycle(false)),
+            _ => None,
+        };
     }
 
     let path = url
@@ -63,6 +72,16 @@ mod tests {
                 "agent-board-client:route?path=%2Ft%2Fk3J9%3Ftranscript%3D1",
                 Some(Signal::Route("/t/k3J9?transcript=1".to_owned())),
             ),
+            (
+                "agent-board-client:cycle?dir=next",
+                Some(Signal::Cycle(true)),
+            ),
+            (
+                "agent-board-client:cycle?dir=previous",
+                Some(Signal::Cycle(false)),
+            ),
+            ("agent-board-client:cycle?dir=sideways", None),
+            ("agent-board-client:cycle", None),
             ("agent-board-client:close?path=%2Fsettings", None),
             ("agent-board-client:open", None),
             ("agent-board-client:open?other=%2Fsettings", None),

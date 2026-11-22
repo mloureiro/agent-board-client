@@ -17,7 +17,11 @@ interface FakeWindow {
     replaceState: (...args: unknown[]) => unknown;
   };
   location: { origin: string; href: string; pathname: string; search: string };
-  addEventListener: (type: string, listener: () => void) => void;
+  addEventListener: (
+    type: string,
+    listener: (event: FakeKeyEvent) => void,
+    capture?: boolean,
+  ) => void;
   EventTarget: typeof EventTarget;
   Notification?: {
     permission: string;
@@ -26,10 +30,18 @@ interface FakeWindow {
   };
 }
 
+interface FakeKeyEvent {
+  key?: string;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
+  preventDefault?: () => void;
+}
+
 function setup(role = 'home') {
   const original = { pushState: vi.fn(), replaceState: vi.fn() };
   const assigned: string[] = [];
-  const listeners: Record<string, (() => void)[]> = {};
+  const listeners: Record<string, ((event: FakeKeyEvent) => void)[]> = {};
   const win: FakeWindow = {
     URL,
     EventTarget,
@@ -50,9 +62,9 @@ function setup(role = 'home') {
     },
   };
   (runInNewContext(script) as Install)(role, win);
-  const fire = (type: string) => {
+  const fire = (type: string, event: FakeKeyEvent = {}) => {
     listeners[type]?.forEach((listener) => {
-      listener();
+      listener(event);
     });
   };
   return { win, original, assigned, fire };
@@ -175,5 +187,34 @@ describe('tab-routing tab role', () => {
       const shown = new (Stand as NonNullable<typeof Stand>)('title');
       shown.close();
     }).not.toThrow();
+  });
+});
+
+describe.each(['home', 'tab'])('tab-routing %s role keyboard', (role) => {
+  it.each([
+    ['Ctrl+Tab', { ctrlKey: true }, 'next'],
+    ['Ctrl+Shift+Tab', { ctrlKey: true, shiftKey: true }, 'previous'],
+  ])('turns %s into a cycle signal', (_name, modifiers, dir) => {
+    const { assigned, fire } = setup(role);
+    const preventDefault = vi.fn();
+
+    fire('keydown', { key: 'Tab', preventDefault, ...modifiers });
+
+    expect(assigned).toEqual([`agent-board-client:cycle?dir=${dir}`]);
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['a plain Tab', { key: 'Tab' }],
+    ['Cmd+Ctrl+Tab', { key: 'Tab', ctrlKey: true, metaKey: true }],
+    ['Ctrl+W', { key: 'w', ctrlKey: true }],
+  ])('leaves %s to the page', (_name, event) => {
+    const { assigned, fire } = setup(role);
+    const preventDefault = vi.fn();
+
+    fire('keydown', { preventDefault, ...event });
+
+    expect(assigned).toEqual([]);
+    expect(preventDefault).not.toHaveBeenCalled();
   });
 });

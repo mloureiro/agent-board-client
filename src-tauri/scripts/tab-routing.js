@@ -90,6 +90,18 @@
     wrap(method, handlers[role]);
   }
 
+  win.addEventListener(
+    'keydown',
+    function (event) {
+      if (event.key !== 'Tab' || !event.ctrlKey || event.metaKey) {
+        return;
+      }
+      event.preventDefault();
+      win.location.href = 'agent-board-client:cycle?dir=' + (event.shiftKey ? 'previous' : 'next');
+    },
+    true,
+  );
+
   if (role !== 'tab') {
     return;
   }
