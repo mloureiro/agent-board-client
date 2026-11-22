@@ -1,34 +1,131 @@
 import { closeTab, onTabsChanged, selectTab, tabsSnapshot } from './tabbar-backend';
 import type { TabsView } from './tabbar-backend';
+import './tabbar.css';
 
 const container = document.getElementById('tabs');
 
+function logFailure(action: string): (error: unknown) => void {
+  return (error) => {
+    console.error(`${action} failed`, error);
+  };
+}
+
 function render(view: TabsView): void {
-  const buttons = view.tabs.map((tab) => {
-    const group = document.createElement('span');
+  if (!container) return;
+  const focusedId = container.contains(document.activeElement)
+    ? (document.activeElement as HTMLElement).closest<HTMLElement>('.tab')?.dataset.id
+    : undefined;
+  const previouslySelected =
+    container.querySelector<HTMLElement>('.tab[data-selected]')?.dataset.id;
+
+  const tabs = view.tabs.map((tab) => {
+    const selected = tab.id === view.selected;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tab';
+    wrapper.setAttribute('role', 'presentation');
+    wrapper.dataset.id = String(tab.id);
+    if (tab.home) wrapper.dataset.home = '';
+    if (selected) wrapper.dataset.selected = '';
+    wrapper.addEventListener('mousedown', (event) => {
+      if (event.button === 1) event.preventDefault();
+    });
+    wrapper.addEventListener('auxclick', (event) => {
+      if (event.button !== 1 || tab.home) return;
+      event.preventDefault();
+      closeTab(tab.id).catch(logFailure('close_tab'));
+    });
 
     const select = document.createElement('button');
     select.type = 'button';
-    select.textContent = tab.home ? '🏠' : tab.label;
-    select.disabled = tab.id === view.selected;
+    select.className = 'tab-select';
+    select.setAttribute('role', 'tab');
+    select.setAttribute('aria-selected', String(selected));
+    select.tabIndex = selected ? 0 : -1;
+    if (tab.home) {
+      select.textContent = '🏠';
+      select.setAttribute('aria-label', 'Board');
+      select.title = 'Board';
+    } else {
+      select.textContent = tab.label;
+      select.title = tab.label;
+    }
     select.addEventListener('click', () => {
-      void selectTab(tab.id);
+      selectTab(tab.id).catch(logFailure('select_tab'));
     });
-    group.append(select);
+    wrapper.append(select);
 
     if (!tab.home) {
       const close = document.createElement('button');
       close.type = 'button';
+      close.className = 'tab-close';
+      close.tabIndex = -1;
       close.textContent = '×';
+      close.setAttribute('aria-label', 'Close tab');
       close.addEventListener('click', () => {
-        void closeTab(tab.id);
+        closeTab(tab.id).catch(logFailure('close_tab'));
       });
-      group.append(close);
+      wrapper.append(close);
     }
-    return group;
+    return wrapper;
   });
-  container?.replaceChildren(...buttons);
+  container.replaceChildren(...tabs);
+
+  const selectedTab = container.querySelector<HTMLElement>('.tab[data-selected]');
+  if (focusedId !== undefined) {
+    const restored = container.querySelector<HTMLElement>(
+      `.tab[data-id="${focusedId}"] .tab-select`,
+    );
+    (restored ?? selectedTab?.querySelector<HTMLElement>('.tab-select'))?.focus();
+  }
+  if (selectedTab && selectedTab.dataset.id !== previouslySelected) {
+    selectedTab.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+  }
 }
 
-await onTabsChanged(render);
-render(await tabsSnapshot());
+function tabButtons(): HTMLElement[] {
+  return Array.from(container?.querySelectorAll<HTMLElement>('.tab-select') ?? []);
+}
+
+container?.addEventListener('keydown', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const tab = target.closest<HTMLElement>('.tab');
+  const buttons = tabButtons();
+  const current = buttons.findIndex((button) => button.closest('.tab') === tab);
+  if (!tab || current < 0) return;
+
+  const destination: Record<string, number> = {
+    ArrowLeft: Math.max(current - 1, 0),
+    ArrowRight: Math.min(current + 1, buttons.length - 1),
+    Home: 0,
+    End: buttons.length - 1,
+  };
+  const index = destination[event.key];
+  if (index !== undefined) {
+    event.preventDefault();
+    buttons[index]?.focus();
+    return;
+  }
+
+  if ((event.key === 'Delete' || event.key === 'Backspace') && !('home' in tab.dataset)) {
+    event.preventDefault();
+    closeTab(Number(tab.dataset.id)).catch(logFailure('close_tab'));
+  }
+});
+
+container?.addEventListener(
+  'wheel',
+  (event) => {
+    if (event.deltaX !== 0 || !(event.currentTarget instanceof HTMLElement)) return;
+    event.currentTarget.scrollLeft += event.deltaY;
+  },
+  { passive: true },
+);
+
+const live = { eventRendered: false };
+await onTabsChanged((view) => {
+  live.eventRendered = true;
+  render(view);
+});
+const snapshot = await tabsSnapshot();
+if (!live.eventRendered) render(snapshot);
