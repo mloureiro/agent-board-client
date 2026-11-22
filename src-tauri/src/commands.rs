@@ -38,11 +38,10 @@ pub fn remove_server(
     if let Err(error) = tab_state::delete(&app, id) {
         eprintln!("server {id}: saved tabs could not be deleted: {error:?}");
     }
-    closed?;
     tauri::async_runtime::spawn(async move {
         webview_store::delete_with_retry(&app, id, Some(name)).await;
     });
-    Ok(())
+    closed
 }
 
 #[tauri::command]
