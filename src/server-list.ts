@@ -6,6 +6,7 @@ export interface ServerListActions {
   readonly open: (server: Server) => Promise<void>;
   readonly remove: (server: Server) => void;
   readonly rename: (server: Server, name: string) => Promise<boolean>;
+  readonly cancelRename: () => void;
 }
 
 let cancelActiveEdit: (() => void) | null = null;
@@ -63,12 +64,6 @@ function renameForm(
   input.value = server.name;
   input.autocomplete = 'off';
   input.setAttribute('aria-label', `Name for ${server.url}`);
-  input.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape') return;
-    event.preventDefault();
-    stop(true);
-  });
-
   const save = document.createElement('button');
   save.type = 'submit';
   save.className = 'primary';
@@ -84,6 +79,12 @@ function renameForm(
       stop(true);
     }),
   );
+  form.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      stop(true);
+    }
+  });
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     if (save.disabled) return;
@@ -121,6 +122,7 @@ function serverRow(server: Server, actions: ServerListActions): HTMLLIElement {
       identity.replaceChildren(name, url);
       renameButton.hidden = false;
       cancelActiveEdit = null;
+      actions.cancelRename();
       if (restoreFocus) renameButton.focus();
     };
     const form = renameForm(server, actions.rename, stop);

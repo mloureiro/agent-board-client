@@ -136,6 +136,9 @@ async function refresh(): Promise<void> {
         return false;
       }
     },
+    cancelRename: () => {
+      report('');
+    },
   });
 }
 
