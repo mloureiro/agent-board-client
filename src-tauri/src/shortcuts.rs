@@ -1,17 +1,16 @@
 use tauri::menu::{
-    Menu, MenuEvent, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu, WINDOW_SUBMENU_ID,
+    AboutMetadata, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu, HELP_SUBMENU_ID,
+    WINDOW_SUBMENU_ID,
 };
 use tauri::{AppHandle, Manager, Wry};
 use uuid::Uuid;
 
-use crate::tab_session;
+use crate::{board_window, list_window, tab_session};
 
 const CLOSE_TAB: &str = "tab-close";
 const NEXT_TAB: &str = "tab-next";
 const PREVIOUS_TAB: &str = "tab-previous";
 const SELECT_PREFIX: &str = "tab-select-";
-const LIST_LABEL: &str = "main";
-const SERVER_LABEL_PREFIX: &str = "server-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabAction {
@@ -38,32 +37,75 @@ fn item(app: &AppHandle, id: &str, text: &str, accelerator: &str) -> tauri::Resu
 }
 
 pub fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
-    let menu = Menu::default(app)?;
+    let about = AboutMetadata {
+        name: Some(app.package_info().name.clone()),
+        version: Some(app.package_info().version.to_string()),
+        ..Default::default()
+    };
 
-    let mut close_tab_home: Option<Submenu<Wry>> = None;
-    for entry in menu.items()? {
-        let MenuItemKind::Submenu(submenu) = entry else {
-            continue;
-        };
-        for child in submenu.items()? {
-            if matches!(&child, MenuItemKind::Predefined(predefined) if predefined.text()? == "Close Window")
-            {
-                submenu.remove(&child)?;
-                if close_tab_home.is_none() || submenu.text()? == "File" {
-                    close_tab_home = Some(submenu.clone());
-                }
-            }
-        }
-    }
     let close_tab = item(app, CLOSE_TAB, "Close Tab", "CmdOrCtrl+W")?;
-    match close_tab_home {
-        Some(home) => home.insert(&close_tab, 0)?,
-        None => {
-            if let Some(MenuItemKind::Submenu(window)) = menu.get(WINDOW_SUBMENU_ID) {
-                window.append(&close_tab)?;
-            }
-        }
+    let file = Submenu::with_items(app, "File", true, &[&close_tab])?;
+    let edit = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let window = Submenu::with_id_and_items(
+        app,
+        WINDOW_SUBMENU_ID,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::maximize(app, None)?,
+        ],
+    )?;
+    let help = Submenu::with_id(app, HELP_SUBMENU_ID, "Help", true)?;
+
+    let menu = Menu::new(app)?;
+    #[cfg(target_os = "macos")]
+    {
+        menu.append(&Submenu::with_items(
+            app,
+            app.package_info().name.clone(),
+            true,
+            &[
+                &PredefinedMenuItem::about(app, None, Some(about))?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::services(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::hide(app, None)?,
+                &PredefinedMenuItem::hide_others(app, None)?,
+                &PredefinedMenuItem::separator(app)?,
+                &PredefinedMenuItem::quit(app, None)?,
+            ],
+        )?)?;
     }
+    #[cfg(not(target_os = "macos"))]
+    {
+        file.append(&PredefinedMenuItem::quit(app, None)?)?;
+        help.append(&PredefinedMenuItem::about(app, None, Some(about))?)?;
+    }
+    menu.append(&file)?;
+    menu.append(&edit)?;
+    #[cfg(target_os = "macos")]
+    menu.append(&Submenu::with_items(
+        app,
+        "View",
+        true,
+        &[&PredefinedMenuItem::fullscreen(app, None)?],
+    )?)?;
+    menu.append(&window)?;
+    menu.append(&help)?;
 
     let tabs = Submenu::with_id(app, "tabs", "Tabs", true)?;
     tabs.append(&item(app, NEXT_TAB, "Next Tab", "Ctrl+Tab")?)?;
@@ -82,7 +124,8 @@ pub fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
 }
 
 fn server_of(label: &str) -> Option<Uuid> {
-    Uuid::parse_str(label.strip_prefix(SERVER_LABEL_PREFIX)?).ok()
+    let id = Uuid::parse_str(label.strip_prefix("server-")?).ok()?;
+    (board_window::window_label(id) == label).then_some(id)
 }
 
 pub fn handle(app: &AppHandle, event: MenuEvent) {
@@ -97,7 +140,7 @@ pub fn handle(app: &AppHandle, event: MenuEvent) {
         return;
     };
 
-    if window.label() == LIST_LABEL {
+    if window.label() == list_window::LABEL {
         if action == TabAction::CloseTab {
             if let Err(error) = window.close() {
                 eprintln!("the server list could not be closed: {error}");
@@ -123,7 +166,6 @@ pub fn handle(app: &AppHandle, event: MenuEvent) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::board_window;
 
     #[test]
     fn maps_each_menu_item_id_to_its_action() {
@@ -154,5 +196,6 @@ mod tests {
         assert_eq!(server_of(&board_window::window_label(id)), Some(id));
         assert_eq!(server_of("main"), None);
         assert_eq!(server_of("server-nope"), None);
+        assert_eq!(server_of(&format!("server-{}", id.simple())), None);
     }
 }

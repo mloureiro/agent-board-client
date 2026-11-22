@@ -1,7 +1,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-const LABEL: &str = "main";
+pub const LABEL: &str = "main";
 
 pub fn show(app: &AppHandle) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window(LABEL) {
