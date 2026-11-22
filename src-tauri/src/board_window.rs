@@ -141,11 +141,16 @@ fn board_builder(
 
     let load_app = app.clone();
     let load_server = server_url.clone();
-    builder.on_page_load(move |_webview, payload| {
-        if payload.event() == PageLoadEvent::Finished {
-            report_load(&load_app, id, tab, &load_server, payload.url());
-        }
-    })
+    let title_app = app.clone();
+    builder
+        .on_page_load(move |_webview, payload| {
+            if payload.event() == PageLoadEvent::Finished {
+                report_load(&load_app, id, tab, &load_server, payload.url());
+            }
+        })
+        .on_document_title_changed(move |_webview, title| {
+            let _ = tab_session::apply(&title_app, id, |session| session.title(tab, &title));
+        })
 }
 
 fn window_size(window: &Window) -> tauri::Result<(f64, f64)> {

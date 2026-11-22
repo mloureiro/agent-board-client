@@ -8,8 +8,12 @@ system's webview.
   `localhost`, `127.0.0.1` and `[::1]`.
 - Each server gets its own persistent website data store, so sign-in cookies and the board's keys
   survive restarts and are never shared between servers.
-- The client stores the server list and nothing else: no token, key or password.
-- A board page cannot call the client's native commands. Only the server list window can.
+- The client stores the server list and, per server, a tab file with the path and label of each
+  open tab. A label can be a decrypted task title, saved in plaintext. The tab file is deleted when
+  the server is removed. The client stores no token, key or password.
+- A board page cannot call the client's native commands. Only the server list window can, and the
+  tab bar of each server window can call three tab commands (snapshot, select, close) for its own
+  window only.
 
 macOS 14 or newer is required. Other platforms compile but are untested.
 
@@ -54,6 +58,10 @@ the unsigned app is then blocked; clear it with `xattr -dr com.apple.quarantine 
 ## Layout
 
 - `src/`: the server list window (TypeScript, no framework).
+- `tabbar.html`, `src/tabbar*.ts`: the tab bar webview at the top of each server window.
+- `src-tauri/scripts/`: scripts injected into board pages, one reporting navigation to the client
+  and one handling external links.
 - `src-tauri/`: the Rust core, with the server list file, the address rule and one window per
   server.
 - `fixtures/server-url-cases.json`: the address rule as a case table, run by both test suites.
+- `fixtures/page-cases.json`: the page-path rule as a case table, run by both test suites.
