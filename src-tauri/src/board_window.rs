@@ -98,6 +98,9 @@ fn handle_navigation(app: &AppHandle, id: Uuid, tab: u64, requested: &Url) -> bo
         Some(Signal::Route(path)) if tab != HOME => {
             let _ = tab_session::apply(app, id, |session| session.route(tab, &path));
         }
+        Some(Signal::Cycle(next)) => {
+            let _ = tab_session::apply(app, id, |session| session.cycle(next));
+        }
         _ => {}
     }
 
