@@ -6,6 +6,7 @@ use crate::connection;
 use crate::diagnostics;
 use crate::error::ClientError;
 use crate::opened_url::{OpenFailure, OpenFailures};
+use crate::server_url::check_server_url;
 use crate::store::{Server, ServerStore};
 use crate::tab_session::{self, TabSessions};
 use crate::tab_state;
@@ -103,6 +104,21 @@ pub async fn test_server(
     Ok(checked?)
 }
 
+async fn check_typed(url: &str) -> Result<(), ClientError> {
+    let url = check_server_url(url)?;
+    connection::check(&url).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn test_address(app: AppHandle, url: String) -> Result<(), ClientError> {
+    let checked = check_typed(&url).await;
+    if let Err(error) = &checked {
+        diagnostics::record(&app, &format!("test of a typed address failed: {error:?}"));
+    }
+    checked
+}
+
 #[tauri::command]
 pub fn take_open_failure(failures: State<'_, OpenFailures>) -> Option<OpenFailure> {
     failures.take()
@@ -140,6 +156,7 @@ pub fn close_tab(app: AppHandle, webview: Webview, tab: u64) -> Result<(), Clien
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::server_url::ServerUrlError;
 
     #[test]
     fn accepts_only_the_label_of_a_tab_bar() {
@@ -159,5 +176,17 @@ mod tests {
         for (label, expected) in cases {
             assert_eq!(server_of_tabbar(&label), expected.flatten(), "{label}");
         }
+    }
+
+    #[test]
+    fn a_rejected_address_is_not_contacted() {
+        let result = tauri::async_runtime::block_on(check_typed("http://reviews.example.org"));
+
+        assert!(matches!(
+            result,
+            Err(ClientError::Url {
+                reason: ServerUrlError::Insecure
+            })
+        ));
     }
 }

@@ -6,6 +6,7 @@ fn main() {
         "rename_server",
         "open_server",
         "test_server",
+        "test_address",
         "take_open_failure",
         "failed_store_deletions",
         "retry_store_deletion",
