@@ -119,11 +119,10 @@ async function refresh(): Promise<void> {
     },
     remove: (server) => {
       report('');
-      removeServer(server.id)
-        .then(refresh)
-        .catch((failure: unknown) => {
-          report(failureMessage(failure));
-        });
+      const reportFailure = (failure: unknown) => {
+        report(failureMessage(failure));
+      };
+      removeServer(server.id).catch(reportFailure).then(refresh).catch(reportFailure);
     },
     rename: async (server, name) => {
       report('');

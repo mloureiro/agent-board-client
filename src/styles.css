@@ -47,6 +47,10 @@ h2 {
   display: none;
 }
 
+.deletion-error > button {
+  margin-left: auto;
+}
+
 .deletion-error {
   display: flex;
   flex-wrap: wrap;
