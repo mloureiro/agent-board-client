@@ -1,13 +1,19 @@
 use url::Url;
 
+use crate::notify::Notice;
+
 const SCHEME: &str = "agent-board-client";
 const MAX_PATH_BYTES: usize = 2048;
+const MAX_TITLE_CHARS: usize = 200;
+const MAX_BODY_CHARS: usize = 500;
+const MAX_TAG_CHARS: usize = 200;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Signal {
     Open(String),
     Route(String),
     Cycle(bool),
+    Notify(Notice),
 }
 
 pub fn is_sentinel(url: &Url) -> bool {
@@ -34,6 +40,10 @@ pub fn parse(url: &Url) -> Option<Signal> {
         };
     }
 
+    if url.path() == "notify" {
+        return parse_notify(url).map(Signal::Notify);
+    }
+
     let path = url
         .query_pairs()
         .find(|(key, _)| key == "path")
@@ -45,6 +55,43 @@ pub fn parse(url: &Url) -> Option<Signal> {
         "route" => Some(Signal::Route(path)),
         _ => None,
     }
+}
+
+fn parse_notify(url: &Url) -> Option<Notice> {
+    let mut title = None;
+    let mut body = None;
+    let mut tag = None;
+    let mut path = None;
+    for (key, value) in url.query_pairs() {
+        let slot = match key.as_ref() {
+            "title" => &mut title,
+            "body" => &mut body,
+            "tag" => &mut tag,
+            "path" => &mut path,
+            _ => continue,
+        };
+        slot.get_or_insert(value.into_owned());
+    }
+
+    let within = |value: &String, max: usize| value.chars().count() <= max;
+    let title = title.filter(|title| within(title, MAX_TITLE_CHARS))?;
+    let body = body.unwrap_or_default();
+    if !within(&body, MAX_BODY_CHARS) {
+        return None;
+    }
+    if tag.as_ref().is_some_and(|tag| !within(tag, MAX_TAG_CHARS)) {
+        return None;
+    }
+    if path.as_ref().is_some_and(|path| !is_plain_path(path)) {
+        return None;
+    }
+
+    Some(Notice {
+        title,
+        body,
+        tag,
+        path,
+    })
 }
 
 pub fn same_origin_url(server: &Url, path: &str) -> Option<Url> {
@@ -91,6 +138,48 @@ mod tests {
             ("agent-board-client:open?path=%2F%5Cevil", None),
             (long.as_str(), None),
             ("https://board.example.com/open?path=%2Fsettings", None),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(parse(&url(input)), expected, "{input}");
+        }
+    }
+
+    fn notice(title: &str, body: &str, tag: Option<&str>, path: Option<&str>) -> Option<Signal> {
+        Some(Signal::Notify(Notice {
+            title: title.to_owned(),
+            body: body.to_owned(),
+            tag: tag.map(str::to_owned),
+            path: path.map(str::to_owned),
+        }))
+    }
+
+    #[test]
+    fn parses_notify_signals_within_the_caps() {
+        let title_200 = format!("agent-board-client:notify?title={}", "%C3%A9".repeat(200));
+        let title_201 = format!("agent-board-client:notify?title={}", "%C3%A9".repeat(201));
+        let body_501 = format!("agent-board-client:notify?title=x&body={}", "b".repeat(501));
+        let tag_201 = format!("agent-board-client:notify?title=x&tag={}", "t".repeat(201));
+        let cases = [
+            (
+                "agent-board-client:notify?title=Needs%20you&body=Fix%20it&tag=task-1&path=%2Ft%2Fk3J9",
+                notice("Needs you", "Fix it", Some("task-1"), Some("/t/k3J9")),
+            ),
+            (
+                "agent-board-client:notify?title=Needs%20you",
+                notice("Needs you", "", None, None),
+            ),
+            (
+                "agent-board-client:notify?title=&body=x",
+                notice("", "x", None, None),
+            ),
+            ("agent-board-client:notify?body=x", None),
+            (title_200.as_str(), notice(&"\u{e9}".repeat(200), "", None, None)),
+            (title_201.as_str(), None),
+            (body_501.as_str(), None),
+            (tag_201.as_str(), None),
+            ("agent-board-client:notify?title=x&path=%2F%2Fevil.test", None),
+            ("agent-board-client:notify?title=x&path=%2F%5Cx", None),
         ];
 
         for (input, expected) in cases {

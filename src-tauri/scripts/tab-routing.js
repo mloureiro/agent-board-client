@@ -124,35 +124,69 @@
     true,
   );
 
-  if (role !== 'tab') {
-    return;
+  if (role === 'tab') {
+    win.addEventListener('popstate', function () {
+      sendPath('route', win.location);
+    });
   }
 
-  win.addEventListener('popstate', function () {
-    sendPath('route', win.location);
-  });
+  const MAX_TITLE = 200;
+  const MAX_BODY = 500;
+  const MAX_TAG = 200;
 
-  function SilentNotification() {
-    const target = new win.EventTarget();
-    target.close = function () {};
-    return target;
+  function cut(value, max) {
+    const points = Array.from(value);
+    return points.length <= max ? value : points.slice(0, max - 1).join('') + '\u2026';
   }
-  Object.defineProperty(SilentNotification, 'permission', {
-    get() {
-      return 'granted';
-    },
-  });
-  SilentNotification.requestPermission = function (callback) {
-    if (typeof callback === 'function') {
-      callback('granted');
+
+  function notify(title, options) {
+    try {
+      const settings = options !== null && typeof options === 'object' ? options : {};
+      const data = settings.data !== null && typeof settings.data === 'object' ? settings.data : {};
+      let href =
+        'agent-board-client:notify?title=' +
+        encodeURIComponent(cut(String(title), MAX_TITLE)) +
+        '&body=' +
+        encodeURIComponent(cut(settings.body === undefined ? '' : String(settings.body), MAX_BODY));
+      if (typeof settings.tag === 'string' && Array.from(settings.tag).length <= MAX_TAG) {
+        href += '&tag=' + encodeURIComponent(settings.tag);
+      }
+      if (typeof data.path === 'string') {
+        href += '&path=' + encodeURIComponent(data.path);
+      }
+      send(href);
+    } catch {
+      return;
     }
-    return Promise.resolve('granted');
-  };
-  win.Notification = SilentNotification;
-
-  if (win.ServiceWorkerRegistration) {
-    win.ServiceWorkerRegistration.prototype.showNotification = function () {
-      return Promise.resolve(undefined);
-    };
   }
+
+  function install(forward) {
+    function StandInNotification(title, options) {
+      const target = new win.EventTarget();
+      target.close = function () {};
+      forward(title, options);
+      return target;
+    }
+    Object.defineProperty(StandInNotification, 'permission', {
+      get() {
+        return 'granted';
+      },
+    });
+    StandInNotification.requestPermission = function (callback) {
+      if (typeof callback === 'function') {
+        callback('granted');
+      }
+      return Promise.resolve('granted');
+    };
+    win.Notification = StandInNotification;
+
+    if (win.ServiceWorkerRegistration) {
+      win.ServiceWorkerRegistration.prototype.showNotification = function (title, options) {
+        forward(title, options);
+        return Promise.resolve(undefined);
+      };
+    }
+  }
+
+  install(role === 'home' ? notify : function () {});
 });
