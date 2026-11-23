@@ -15,6 +15,26 @@ pub struct Notice {
     pub path: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClickTarget {
+    Home,
+    Task(String),
+}
+
+pub fn click_target(path: &str) -> ClickTarget {
+    let is_task_id = |id: &str| {
+        !id.is_empty()
+            && id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    };
+
+    match path.strip_prefix("/t/") {
+        Some(id) if is_task_id(id) => ClickTarget::Task(path.to_owned()),
+        _ => ClickTarget::Home,
+    }
+}
+
 pub fn request_identifier(server: Uuid, tag: Option<&str>) -> String {
     match tag {
         Some(tag) => format!("{server}:{tag}"),
@@ -64,6 +84,30 @@ impl NotifyLimits {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn click_target_opens_only_the_board_or_a_task() {
+        let task = |path: &str| ClickTarget::Task(path.to_owned());
+        let cases = [
+            ("/", ClickTarget::Home),
+            ("/t/k3J9", task("/t/k3J9")),
+            ("/t/a_b-C", task("/t/a_b-C")),
+            ("/t/", ClickTarget::Home),
+            ("/t/k3J9/", ClickTarget::Home),
+            ("/t/k3J9?transcript=1", ClickTarget::Home),
+            ("/t/a/b", ClickTarget::Home),
+            ("/t/a.b", ClickTarget::Home),
+            ("/settings", ClickTarget::Home),
+            ("/backlog", ClickTarget::Home),
+            ("//evil.test/t/x", ClickTarget::Home),
+            ("https://evil.test/t/x", ClickTarget::Home),
+            ("", ClickTarget::Home),
+        ];
+
+        for (path, expected) in cases {
+            assert_eq!(click_target(path), expected, "{path:?}");
+        }
+    }
 
     #[test]
     fn a_tag_makes_the_identifier_stable_and_no_tag_makes_it_fresh() {
