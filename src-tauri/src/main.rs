@@ -68,6 +68,7 @@ fn main() {
             commands::rename_server,
             commands::open_server,
             commands::test_server,
+            commands::test_address,
             commands::take_open_failure,
             commands::failed_store_deletions,
             commands::retry_store_deletion,

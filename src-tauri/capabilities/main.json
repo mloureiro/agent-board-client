@@ -10,6 +10,7 @@
     "allow-rename-server",
     "allow-open-server",
     "allow-test-server",
+    "allow-test-address",
     "allow-take-open-failure",
     "allow-failed-store-deletions",
     "allow-retry-store-deletion",

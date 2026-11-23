@@ -14,8 +14,8 @@
       {
         "label": "main",
         "title": "Agent Board",
-        "width": 560,
-        "height": 640,
+        "width": 420,
+        "height": 420,
         "minWidth": 420,
         "minHeight": 420
       }
