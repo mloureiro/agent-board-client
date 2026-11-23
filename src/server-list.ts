@@ -1,177 +1,269 @@
 import type { Server } from './backend';
+import { h } from './dom';
+import { menu, menuButton } from './row-menu';
 
-export interface ServerListActions {
-  readonly test: (server: Server) => Promise<void>;
-  readonly open: (server: Server) => Promise<void>;
-  readonly remove: (server: Server) => void;
-  readonly rename: (server: Server, name: string) => Promise<boolean>;
+export interface Editing {
+  readonly id: string;
+  value: string;
+  saving: boolean;
+  invalid: boolean;
+}
+
+export interface ListView {
+  readonly servers: readonly Server[];
+  readonly editing: Editing | null;
+  readonly confirming: string | null;
+  readonly menuOpen: string | null;
+  readonly pending: ReadonlyMap<string, 'test' | 'open'>;
+  readonly removing: string | null;
+  readonly flagged: ReadonlySet<string>;
+}
+
+export interface ListHandlers {
+  readonly open: (server: Server) => void;
+  readonly openMenu: (server: Server, itemIndex: number) => void;
+  readonly closeMenu: (server: Server) => void;
+  readonly test: (server: Server) => void;
+  readonly startRename: (server: Server) => void;
+  readonly editValue: (value: string) => void;
+  readonly saveRename: () => void;
   readonly cancelRename: () => void;
+  readonly askRemove: (server: Server) => void;
+  readonly cancelRemove: (server: Server) => void;
+  readonly remove: (server: Server) => void;
+  readonly disarmRemove: () => void;
 }
 
-let cancelActiveEdit: (() => void) | null = null;
-
-function button(label: string, className: string, onClick: () => void): HTMLButtonElement {
-  const element = document.createElement('button');
-  element.type = 'button';
-  element.className = className;
-  element.textContent = label;
-  element.addEventListener('click', onClick);
-  return element;
+export interface RenderOptions {
+  readonly reuseEditor?: boolean;
 }
 
-function pendingButton(
-  label: string,
-  pendingLabel: string,
-  className: string,
-  run: () => Promise<void>,
-): HTMLButtonElement {
-  const element = button(label, className, () => {
-    element.disabled = true;
-    element.textContent = pendingLabel;
-    void run().finally(() => {
-      element.disabled = false;
-      element.textContent = label;
-    });
-  });
-  return element;
+const MENU_ITEM_COUNT = 3;
+
+function identity(server: Server): HTMLElement {
+  return h(
+    'div',
+    { class: 'identity' },
+    h('span', { class: 'name', text: server.name }),
+    h('span', { class: 'url', text: server.url, title: server.url }),
+  );
 }
 
-function removeButton(server: Server, remove: (server: Server) => void): HTMLButtonElement {
-  const element = button('Remove', 'quiet', () => {
-    if (element.dataset.armed === 'true') {
-      remove(server);
-      return;
-    }
-    element.dataset.armed = 'true';
-    element.textContent = 'Confirm remove';
-  });
-  element.addEventListener('blur', () => {
-    delete element.dataset.armed;
-    element.textContent = 'Remove';
-  });
-  return element;
-}
-
-function renameForm(
-  server: Server,
-  rename: ServerListActions['rename'],
-  stop: (restoreFocus: boolean) => void,
-): HTMLFormElement {
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'rename-input';
-  input.value = server.name;
-  input.autocomplete = 'off';
-  input.setAttribute('aria-label', `Name for ${server.url}`);
-  const save = document.createElement('button');
-  save.type = 'submit';
-  save.className = 'primary';
-  save.textContent = 'Save';
-
-  const form = document.createElement('form');
-  form.className = 'rename';
-  form.noValidate = true;
-  form.append(
-    input,
-    save,
-    button('Cancel', 'quiet', () => {
-      stop(true);
+function normalRow(server: Server, view: ListView, handlers: ListHandlers): HTMLLIElement {
+  const pending = view.pending.get(server.id);
+  const menuOpen = view.menuOpen === server.id;
+  return h(
+    'li',
+    {
+      class: 'server',
+      'data-server-id': server.id,
+      'data-mode': 'normal',
+      'data-flagged': view.flagged.has(server.id),
+    },
+    identity(server),
+    pending === 'test' && h('span', { class: 'pending', text: 'Testing…' }),
+    h('button', {
+      type: 'button',
+      class: 'primary',
+      key: `open-${server.id}`,
+      disabled: pending === 'open',
+      text: pending === 'open' ? 'Connecting…' : 'Open',
+      onclick: () => {
+        handlers.open(server);
+      },
     }),
+    menuButton({
+      id: server.id,
+      label: `Actions for ${server.name}`,
+      expanded: menuOpen,
+      disabled: pending === 'test',
+      onOpen: (at) => {
+        handlers.openMenu(server, at === 'first' ? 0 : MENU_ITEM_COUNT - 1);
+      },
+      onClose: () => {
+        handlers.closeMenu(server);
+      },
+    }),
+    menuOpen &&
+      menu({
+        id: server.id,
+        onClose: () => {
+          handlers.closeMenu(server);
+        },
+        items: [
+          {
+            label: 'Test',
+            run: () => {
+              handlers.test(server);
+            },
+          },
+          {
+            label: 'Rename',
+            run: () => {
+              handlers.startRename(server);
+            },
+          },
+          {
+            label: 'Remove…',
+            danger: true,
+            run: () => {
+              handlers.askRemove(server);
+            },
+          },
+        ],
+      }),
   );
-  form.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      stop(true);
-    }
-  });
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    if (save.disabled) return;
-    save.disabled = true;
-    rename(server, input.value)
-      .then((saved) => {
-        if (saved) return;
-        save.disabled = false;
-        input.focus();
-      })
-      .catch(() => {
-        save.disabled = false;
-      });
-  });
-  return form;
 }
 
-function serverRow(
-  server: Server,
-  flagged: ReadonlySet<string>,
-  actions: ServerListActions,
-): HTMLLIElement {
-  const name = document.createElement('span');
-  name.className = 'server-name';
-  name.textContent = server.name;
-
-  const url = document.createElement('span');
-  url.className = 'server-url';
-  url.textContent = server.url;
-  url.title = server.url;
-
-  const identity = document.createElement('div');
-  identity.className = 'server-identity';
-  identity.append(name, url);
-
-  const renameButton = button('Rename', 'quiet', () => {
-    cancelActiveEdit?.();
-    const stop = (restoreFocus: boolean): void => {
-      identity.replaceChildren(name, url);
-      renameButton.hidden = false;
-      cancelActiveEdit = null;
-      actions.cancelRename();
-      if (restoreFocus) renameButton.focus();
-    };
-    const form = renameForm(server, actions.rename, stop);
-    identity.replaceChildren(form, url);
-    renameButton.hidden = true;
-    cancelActiveEdit = () => {
-      stop(false);
-    };
-    const input = form.querySelector('input');
-    input?.focus();
-    input?.select();
-  });
-  renameButton.dataset.rename = 'true';
-
-  const controls = document.createElement('div');
-  controls.className = 'server-controls';
-  controls.append(
-    renameButton,
-    removeButton(server, actions.remove),
-    pendingButton('Test', 'Testing…', '', () => actions.test(server)),
-    pendingButton('Open', 'Connecting…', 'primary', () => actions.open(server)),
+function editingRow(server: Server, editing: Editing, handlers: ListHandlers): HTMLLIElement {
+  return h(
+    'li',
+    { 'data-server-id': server.id, 'data-mode': 'editing' },
+    h(
+      'form',
+      {
+        class: 'editor',
+        'aria-label': `Rename ${server.name}`,
+        novalidate: true,
+        onsubmit: (event) => {
+          event.preventDefault();
+          handlers.saveRename();
+        },
+        onkeydown: (event) => {
+          if (event instanceof KeyboardEvent && event.key === 'Escape') {
+            event.preventDefault();
+            handlers.cancelRename();
+          }
+        },
+      },
+      h('input', {
+        type: 'text',
+        key: 'rename-input',
+        value: editing.value,
+        autocomplete: 'off',
+        'aria-label': `Name for ${server.url}`,
+        'aria-describedby': `rename-address-${server.id}`,
+        'aria-invalid': editing.invalid ? 'true' : null,
+        oninput: (event) => {
+          if (event.target instanceof HTMLInputElement) handlers.editValue(event.target.value);
+        },
+      }),
+      h('span', {
+        class: 'url',
+        id: `rename-address-${server.id}`,
+        text: server.url,
+        title: server.url,
+      }),
+      h(
+        'div',
+        { class: 'editor-actions' },
+        h('button', {
+          type: 'button',
+          class: 'quiet',
+          text: 'Cancel',
+          onclick: () => {
+            handlers.cancelRename();
+          },
+        }),
+        h('button', {
+          type: 'submit',
+          class: 'primary',
+          disabled: editing.saving,
+          text: editing.saving ? 'Saving…' : 'Save',
+        }),
+      ),
+    ),
   );
+}
 
-  const row = document.createElement('li');
-  row.className = 'server';
-  row.dataset.serverId = server.id;
-  row.toggleAttribute('data-flagged', flagged.has(server.id));
-  row.append(identity, controls);
-  return row;
+function confirmingRow(server: Server, view: ListView, handlers: ListHandlers): HTMLLIElement {
+  const removing = view.removing === server.id;
+  return h(
+    'li',
+    {
+      class: 'confirm',
+      'data-server-id': server.id,
+      'data-mode': 'confirming',
+      onkeydown: (event) => {
+        if (event instanceof KeyboardEvent && event.key === 'Escape') {
+          handlers.cancelRemove(server);
+        }
+      },
+      onfocusout: (event) => {
+        const row = event.currentTarget;
+        const next = event instanceof FocusEvent ? event.relatedTarget : null;
+        // WebKit does not focus a button on click, so clicking Remove fires focusout with a
+        // null relatedTarget; disarming then would swallow that click.
+        if (row instanceof Node && next instanceof Node && !row.contains(next)) {
+          handlers.disarmRemove();
+        }
+      },
+    },
+    h('p', {
+      text: `Remove ${server.name}? Its signed-in session and stored data are deleted too.`,
+    }),
+    h(
+      'div',
+      {},
+      h('button', {
+        type: 'button',
+        class: 'quiet',
+        key: `confirm-cancel-${server.id}`,
+        disabled: removing,
+        text: 'Cancel',
+        onclick: () => {
+          handlers.cancelRemove(server);
+        },
+      }),
+      h('button', {
+        type: 'button',
+        class: 'danger',
+        disabled: removing,
+        text: removing ? 'Removing…' : 'Remove',
+        onclick: () => {
+          handlers.remove(server);
+        },
+      }),
+    ),
+  );
+}
+
+function rowFor(server: Server, view: ListView, handlers: ListHandlers): HTMLLIElement {
+  if (view.editing?.id === server.id) return editingRow(server, view.editing, handlers);
+  if (view.confirming === server.id) return confirmingRow(server, view, handlers);
+  return normalRow(server, view, handlers);
 }
 
 export function renderServerList(
   list: HTMLElement,
   emptyState: HTMLElement,
-  servers: readonly Server[],
-  flagged: ReadonlySet<string>,
-  actions: ServerListActions,
+  view: ListView,
+  handlers: ListHandlers,
+  options: RenderOptions = {},
 ): void {
-  cancelActiveEdit = null;
-  list.replaceChildren(...servers.map((server) => serverRow(server, flagged, actions)));
-  emptyState.hidden = servers.length > 0;
+  const liveEditor =
+    options.reuseEditor === true && view.editing !== null
+      ? findRow(list, view.editing.id, 'editing')
+      : null;
+  list.replaceChildren(
+    ...view.servers.map((server) =>
+      view.editing?.id === server.id && liveEditor !== null
+        ? liveEditor
+        : rowFor(server, view, handlers),
+    ),
+  );
+  emptyState.hidden = view.servers.length > 0;
 }
 
-function rowFor(list: HTMLElement, serverId: string): HTMLElement | null {
+export function findRow(list: HTMLElement, serverId: string, mode?: string): HTMLElement | null {
   for (const row of list.children) {
-    if (row instanceof HTMLElement && row.dataset.serverId === serverId) return row;
+    if (
+      row instanceof HTMLElement &&
+      row.dataset.serverId === serverId &&
+      (mode === undefined || row.dataset.mode === mode)
+    ) {
+      return row;
+    }
   }
   return null;
 }
@@ -182,12 +274,4 @@ export function markFlagged(list: HTMLElement, flagged: ReadonlySet<string>): vo
       row.toggleAttribute('data-flagged', flagged.has(row.dataset.serverId ?? ''));
     }
   }
-}
-
-export function revealRow(list: HTMLElement, serverId: string): void {
-  rowFor(list, serverId)?.scrollIntoView({ block: 'nearest' });
-}
-
-export function focusRename(list: HTMLElement, serverId: string): void {
-  rowFor(list, serverId)?.querySelector<HTMLButtonElement>('button[data-rename]')?.focus();
 }
