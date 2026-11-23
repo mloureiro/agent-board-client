@@ -10,6 +10,7 @@ use crate::error::ClientError;
 use crate::store::ServerStore;
 use crate::tab_state::{self, SavedTabs};
 use crate::tabs::{Effect, TabSession, TabsView};
+use crate::zoom::Zoom;
 
 const TABS_CHANGED: &str = "tabs-changed";
 
@@ -48,6 +49,10 @@ impl TabSessions {
 
     pub fn remove(&self, server: Uuid) {
         self.sessions().remove(&server);
+    }
+
+    pub fn zoom(&self, server: Uuid) -> Option<Zoom> {
+        self.sessions().get(&server).map(TabSession::zoom)
     }
 
     pub fn view(&self, server: Uuid) -> Result<TabsView, ClientError> {
@@ -142,6 +147,7 @@ fn perform(app: &AppHandle, batch: Batch) {
                     }
                 }
             }
+            Effect::Zoom(zoom) => board_window::set_zoom(app, server, zoom),
             Effect::Changed => {
                 let target = EventTarget::webview(tabbar_label(server));
                 if let Err(error) = app.emit_to(target, TABS_CHANGED, &view) {

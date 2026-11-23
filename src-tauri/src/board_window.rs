@@ -24,6 +24,7 @@ use crate::tabs::{TabSession, HOME};
 use crate::user_notifications;
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use crate::webview_store;
+use crate::zoom::{Zoom, ZoomStep};
 
 type BoardWebviewBuilder = WebviewBuilder<Wry>;
 
@@ -126,6 +127,9 @@ fn handle_navigation(app: &AppHandle, id: Uuid, tab: u64, requested: &Url) -> bo
             let _ = tab_session::apply(app, id, |session| session.route(tab, &path));
         }
         Some(Signal::Notify(notice)) if tab == HOME => raise_notification(app, id, notice),
+        Some(Signal::ZoomIn) => {
+            let _ = tab_session::apply(app, id, |session| session.step_zoom(ZoomStep::In));
+        }
         Some(Signal::Cycle(next)) => {
             let _ = tab_session::apply(app, id, |session| session.cycle(next));
         }
@@ -199,13 +203,18 @@ pub fn add_board_webview(
     let builder = with_own_storage(app, board_builder(app, id, server_url, tab, target), id)?;
     let (width, height) = window_size(window)?;
     let content = layout::bounds(Slot::Content, width, height);
-    let _webview = window.add_child(
+    let webview = window.add_child(
         builder,
         LogicalPosition::new(content.x, content.y),
         LogicalSize::new(content.width, content.height),
     )?;
+    if let Some(zoom) = app.state::<TabSessions>().zoom(id) {
+        if let Err(error) = webview.set_zoom(zoom.factor()) {
+            eprintln!("server {id}: tab {tab}: the zoom could not be applied: {error}");
+        }
+    }
     #[cfg(target_os = "macos")]
-    if let Err(error) = _webview.with_webview(move |platform| {
+    if let Err(error) = webview.with_webview(move |platform| {
         if !disable_backspace_navigation(platform.inner()) {
             eprintln!("server {id}: tab {tab}: WebKit has no Backspace navigation switch; left on");
         }
@@ -241,6 +250,21 @@ fn add_tab_bar(window: &Window, id: Uuid) -> Result<(), ClientError> {
         LogicalSize::new(bar.width, bar.height),
     )?;
     Ok(())
+}
+
+pub fn set_zoom(app: &AppHandle, id: Uuid, zoom: Zoom) {
+    let Some(window) = app.get_window(&window_label(id)) else {
+        return;
+    };
+    let boards = window
+        .webviews()
+        .into_iter()
+        .filter(|webview| layout::slot_of(webview.label()) == Slot::Content);
+    for webview in boards {
+        if let Err(error) = webview.set_zoom(zoom.factor()) {
+            eprintln!("server {id}: the zoom could not be applied: {error}");
+        }
+    }
 }
 
 fn lay_out(app: &AppHandle, id: Uuid, size: PhysicalSize<u32>, scale_factor: f64) {

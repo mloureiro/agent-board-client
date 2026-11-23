@@ -12,6 +12,7 @@ use crate::sentinel::is_plain_path;
 use crate::store::ServerStore;
 use crate::tabs::{page_of, Route, MAX_TABS};
 use crate::webview_store;
+use crate::zoom::Zoom;
 
 const MAX_LABEL_CHARS: usize = 200;
 
@@ -25,6 +26,8 @@ pub struct SavedTab {
 pub struct SavedTabs {
     pub selected: u64,
     pub tabs: Vec<SavedTab>,
+    #[serde(default)]
+    pub zoom: Zoom,
 }
 
 fn directory(app: &AppHandle) -> tauri::Result<PathBuf> {
@@ -111,7 +114,11 @@ pub fn restore(saved: SavedTabs) -> SavedTabs {
     if saved.selected > total {
         selected = tabs.len() as u64;
     }
-    SavedTabs { selected, tabs }
+    SavedTabs {
+        selected,
+        tabs,
+        zoom: saved.zoom.restored(),
+    }
 }
 
 pub fn tab_file_ids(names: &[OsString]) -> Vec<Uuid> {
@@ -179,6 +186,7 @@ mod tests {
                     label: (*label).to_owned(),
                 })
                 .collect(),
+            zoom: Zoom::default(),
         }
     }
 

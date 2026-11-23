@@ -362,9 +362,26 @@ describe.each(['home', 'tab'])('tab-routing %s role keyboard', (role) => {
   });
 
   it.each([
+    ['Cmd+Shift+=', { metaKey: true, shiftKey: true }],
+    ['Ctrl+Shift+=', { ctrlKey: true, shiftKey: true }],
+    ['Cmd with an unshifted +', { metaKey: true }],
+  ])('turns %s into a zoom-in signal', (_name, modifiers) => {
+    const { assigned, fire, flush } = setup(role);
+    const preventDefault = vi.fn();
+
+    fire('keydown', { key: '+', preventDefault, ...modifiers });
+    flush();
+
+    expect(assigned).toEqual(['agent-board-client:zoom?step=in']);
+    expect(preventDefault).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
     ['a plain Tab', { key: 'Tab' }],
     ['Cmd+Ctrl+Tab', { key: 'Tab', ctrlKey: true, metaKey: true }],
     ['Ctrl+W', { key: 'w', ctrlKey: true }],
+    ['a plain +', { key: '+', shiftKey: true }],
+    ['Cmd+=', { key: '=', metaKey: true }],
   ])('leaves %s to the page', (_name, event) => {
     const { assigned, fire, flush } = setup(role);
     const preventDefault = vi.fn();

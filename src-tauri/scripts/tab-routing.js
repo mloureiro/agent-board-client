@@ -115,11 +115,14 @@
   win.addEventListener(
     'keydown',
     function (event) {
-      if (event.key !== 'Tab' || !event.ctrlKey || event.metaKey) {
-        return;
+      if (event.key === 'Tab' && event.ctrlKey && !event.metaKey) {
+        event.preventDefault();
+        send('agent-board-client:cycle?dir=' + (event.shiftKey ? 'previous' : 'next'));
       }
-      event.preventDefault();
-      send('agent-board-client:cycle?dir=' + (event.shiftKey ? 'previous' : 'next'));
+      if (event.key === '+' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        send('agent-board-client:zoom?step=in');
+      }
     },
     true,
   );
