@@ -147,7 +147,7 @@ impl TabSession {
             next_id: tabs.len() as u64 + 1,
             tabs,
             selected: HOME,
-            zoom: saved.zoom,
+            zoom: Zoom::default(),
         }
     }
 
@@ -167,7 +167,6 @@ impl TabSession {
                     label: tab.label.clone(),
                 })
                 .collect(),
-            zoom: self.zoom,
         }
     }
 
@@ -356,7 +355,7 @@ impl TabSession {
             return Vec::new();
         }
         self.zoom = zoom;
-        vec![Effect::Zoom(zoom), Effect::Changed]
+        vec![Effect::Zoom(zoom)]
     }
 
     pub fn view(&self) -> TabsView {
@@ -916,20 +915,16 @@ mod tests {
     }
 
     #[test]
-    fn zooms_every_tab_and_keeps_the_level_with_the_saved_tabs() {
+    fn zooms_every_tab_and_stops_at_actual_size() {
         let mut model = session(&["/settings"], 1, &[]);
         let zoomed = Zoom::default().step(ZoomStep::In);
 
-        assert_eq!(
-            model.step_zoom(ZoomStep::In),
-            vec![Effect::Zoom(zoomed), Effect::Changed]
-        );
-        assert_eq!(model.saved().zoom, zoomed);
-        assert_eq!(TabSession::restored(&model.saved()).zoom(), zoomed);
+        assert_eq!(model.step_zoom(ZoomStep::In), vec![Effect::Zoom(zoomed)]);
+        assert_eq!(model.zoom(), zoomed);
 
         assert_eq!(
             model.step_zoom(ZoomStep::Reset),
-            vec![Effect::Zoom(Zoom::default()), Effect::Changed]
+            vec![Effect::Zoom(Zoom::default())]
         );
         assert_eq!(model.step_zoom(ZoomStep::Reset), vec![]);
     }
