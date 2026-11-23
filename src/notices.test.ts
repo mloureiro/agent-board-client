@@ -9,7 +9,6 @@ const CAUSES: readonly NoticeCause[] = [
   'remove',
   'rename',
   'retry',
-  'add',
   'startup',
 ];
 
@@ -31,7 +30,6 @@ describe('clearFor', () => {
     ['rename', statusOnly],
     ['cancelRename', statusOnly],
     ['retry', statusOnly],
-    ['add', statusOnly],
   ])('%s keeps %j', (action, surviving) => {
     expect(clearFor(notices, action).map((notice) => notice.cause)).toEqual(surviving);
   });

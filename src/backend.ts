@@ -65,6 +65,10 @@ export function testServer(id: string): Promise<void> {
   return invoke('test_server', { id });
 }
 
+export function testAddress(url: string): Promise<void> {
+  return invoke('test_address', { url });
+}
+
 export interface OpenFailure {
   readonly name: string;
   readonly error: unknown;
