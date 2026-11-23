@@ -5,6 +5,9 @@
 }
 
 body {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
   margin: 0;
 }
 
@@ -19,12 +22,6 @@ body {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-
-body {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  height: 100vh;
 }
 
 .app-head,
@@ -56,13 +53,13 @@ h1 {
 h1 small {
   margin-left: var(--space-2);
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 400;
 }
 
 h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-md);
   font-weight: 600;
 }
 
@@ -76,7 +73,7 @@ h2 {
 
 .panel {
   display: grid;
-  max-height: 132px;
+  max-height: var(--panel-max-height);
   margin: 0;
   padding: 0;
   overflow: auto;
@@ -169,7 +166,7 @@ h2 {
   overflow: hidden;
   color: var(--text-muted);
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-size: var(--text-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -205,7 +202,7 @@ label {
 
 label span {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 
 input {

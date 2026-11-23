@@ -202,9 +202,10 @@ async function refresh(): Promise<void> {
           );
           return false;
         }
-        await finishRename(server);
-        const renamed = servers.find((candidate) => candidate.id === server.id);
-        notify('rename', server.id, 'error', subjectMessage(renamed?.name ?? name, saved));
+        await finishRename(server).catch((reload: unknown) => {
+          reportStatus('rename', reload);
+        });
+        notify('rename', server.id, 'error', subjectMessage(name.trim(), saved));
         return true;
       }
     },
