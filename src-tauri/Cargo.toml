@@ -19,6 +19,12 @@ tokio = { version = "1", features = ["sync", "time"] }
 url = { version = "2", features = ["serde"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+block2 = { version = "0.6", default-features = false, features = ["std"] }
+objc2 = { version = "0.6", default-features = false, features = ["std"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSDictionary", "NSError", "NSObject", "NSString"] }
+objc2-user-notifications = { version = "0.3", default-features = false, features = ["std", "block2", "UNNotification", "UNNotificationContent", "UNNotificationRequest", "UNNotificationSound", "UNNotificationTrigger", "UNUserNotificationCenter"] }
+
 [profile.release]
 codegen-units = 1
 lto = true

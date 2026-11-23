@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder};
 use tauri::window::WindowBuilder;
@@ -12,12 +14,14 @@ use crate::connection;
 use crate::error::ClientError;
 use crate::layout::{self, Slot};
 use crate::link_route::{self, LinkRoute};
+use crate::notify::{Notice, NotifyLimits};
 use crate::sentinel::{self, Signal};
 use crate::server_url::check_server_url;
-use crate::store::Server;
+use crate::store::{Server, ServerStore};
 use crate::tab_session::{self, TabSessions};
 use crate::tab_state;
 use crate::tabs::{TabSession, HOME};
+use crate::user_notifications;
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 use crate::webview_store;
 
@@ -89,6 +93,28 @@ fn route_new_window(app: &AppHandle, id: Uuid, server_url: &Url, requested: &Url
     }
 }
 
+fn raise_notification(app: &AppHandle, id: Uuid, notice: Notice) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Ok(server) = app.state::<ServerStore>().find(id) else {
+            return;
+        };
+        let sender_on_origin = app
+            .get_webview(&tab_label(id, HOME))
+            .and_then(|webview| webview.url().ok())
+            .is_some_and(|url| url.origin() == server.url.origin());
+        if !sender_on_origin {
+            eprintln!("server {id}: notification from another origin dropped");
+            return;
+        }
+        if !app.state::<NotifyLimits>().allow(id, Instant::now()) {
+            eprintln!("server {id}: notification limit reached");
+            return;
+        }
+        user_notifications::deliver(id, &server.name, notice);
+    });
+}
+
 fn handle_navigation(app: &AppHandle, id: Uuid, tab: u64, requested: &Url) -> bool {
     if !sentinel::is_sentinel(requested) {
         return true;
@@ -99,6 +125,7 @@ fn handle_navigation(app: &AppHandle, id: Uuid, tab: u64, requested: &Url) -> bo
         Some(Signal::Route(path)) if tab != HOME => {
             let _ = tab_session::apply(app, id, |session| session.route(tab, &path));
         }
+        Some(Signal::Notify(notice)) if tab == HOME => raise_notification(app, id, notice),
         Some(Signal::Cycle(next)) => {
             let _ = tab_session::apply(app, id, |session| session.cycle(next));
         }
@@ -237,7 +264,10 @@ fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), Client
             new_inner_size,
             ..
         } => lay_out(&layout_app, id, *new_inner_size, *scale_factor),
-        WindowEvent::Destroyed => layout_app.state::<TabSessions>().remove(id),
+        WindowEvent::Destroyed => {
+            layout_app.state::<TabSessions>().remove(id);
+            layout_app.state::<NotifyLimits>().forget(id);
+        }
         _ => {}
     });
 

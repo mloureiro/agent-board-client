@@ -36,7 +36,7 @@ interface FakeWindow {
   Notification?: {
     permission: string;
     requestPermission: (callback?: (permission: string) => void) => Promise<string>;
-    new (title: string): EventTarget & { close: () => void };
+    new (title: string, options?: object): EventTarget & { close: () => void };
   };
 }
 
@@ -124,11 +124,106 @@ describe('tab-routing home role', () => {
       expect(original[method]).toHaveBeenCalledTimes(1);
     });
   });
+});
 
-  it('leaves Notification alone', () => {
-    const { win } = setup();
+describe('tab-routing home role notifications', () => {
+  type Show = (title: string, options?: object) => Promise<unknown>;
 
-    expect(win.Notification).toBeUndefined();
+  function notifyQuery(assigned: string[]) {
+    expect(assigned).toHaveLength(1);
+    const url = new URL(assigned[0] as string);
+    expect(url.protocol).toBe('agent-board-client:');
+    expect(url.pathname).toBe('notify');
+    return url.searchParams;
+  }
+
+  function show(via: 'constructor' | 'worker', title: string, options: object) {
+    const context = setup('home', true);
+    if (via === 'constructor') {
+      new (context.win.Notification as NonNullable<typeof context.win.Notification>)(
+        title,
+        options,
+      );
+    } else {
+      const registration = context.win.ServiceWorkerRegistration as {
+        prototype: { showNotification: Show };
+      };
+      void registration.prototype.showNotification(title, options);
+    }
+    context.flush();
+    return context.assigned;
+  }
+
+  it.each([
+    [
+      'constructor',
+      { body: 'Fix the build', tag: 'task-1' },
+      { title: 'Needs you', body: 'Fix the build', tag: 'task-1', path: null },
+    ],
+    [
+      'worker',
+      { body: 'Fix the build', tag: 'task-1', data: { path: '/t/k3J9' } },
+      { title: 'Needs you', body: 'Fix the build', tag: 'task-1', path: '/t/k3J9' },
+    ],
+    ['constructor', {}, { title: 'Needs you', body: '', tag: null, path: null }],
+  ] as const)('forwards a call through the %s', (via, options, expected) => {
+    const query = notifyQuery(show(via, 'Needs you', options));
+
+    expect({
+      title: query.get('title'),
+      body: query.get('body'),
+      tag: query.get('tag'),
+      path: query.get('path'),
+    }).toEqual(expected);
+  });
+
+  it('cuts a long title to 200 code points ending in an ellipsis', () => {
+    const query = notifyQuery(show('worker', '\u{1F600}'.repeat(300), {}));
+
+    const title = Array.from(query.get('title') as string);
+    expect(title).toHaveLength(200);
+    expect(title.at(-1)).toBe('\u2026');
+  });
+
+  it('cuts a long body to 500 code points ending in an ellipsis', () => {
+    const query = notifyQuery(show('worker', 'x', { body: 'b'.repeat(600) }));
+
+    const body = Array.from(query.get('body') as string);
+    expect(body).toHaveLength(500);
+    expect(body.at(-1)).toBe('\u2026');
+  });
+
+  it('leaves out a tag over 200 code points', () => {
+    const query = notifyQuery(show('worker', 'x', { tag: 't'.repeat(201) }));
+
+    expect(query.has('tag')).toBe(false);
+  });
+
+  it('sends three notifications of one task as three signals', () => {
+    const { win, assigned, flush } = setup('home', true);
+    const registration = win.ServiceWorkerRegistration as {
+      prototype: { showNotification: Show };
+    };
+
+    for (const title of ['one', 'two', 'three']) {
+      void registration.prototype.showNotification(title, {});
+    }
+    flush();
+
+    expect(assigned.map((href) => new URL(href).searchParams.get('title'))).toEqual([
+      'one',
+      'two',
+      'three',
+    ]);
+  });
+
+  it('reports permission granted and resolves a permission request', async () => {
+    const { win } = setup('home');
+    const callback = vi.fn();
+
+    expect(win.Notification?.permission).toBe('granted');
+    await expect(win.Notification?.requestPermission(callback)).resolves.toBe('granted');
+    expect(callback).toHaveBeenCalledWith('granted');
   });
 });
 

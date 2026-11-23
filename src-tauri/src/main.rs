@@ -8,6 +8,7 @@ mod error;
 mod layout;
 mod link_route;
 mod list_window;
+mod notify;
 mod opened_url;
 mod sentinel;
 mod server_url;
@@ -16,10 +17,12 @@ mod store;
 mod tab_session;
 mod tab_state;
 mod tabs;
+mod user_notifications;
 mod webview_store;
 
 use tauri::{AppHandle, Manager, RunEvent};
 
+use crate::notify::NotifyLimits;
 use crate::opened_url::{EarlyLinks, OpenFailures};
 use crate::store::ServerStore;
 use crate::webview_store::FailedDeletions;
@@ -47,11 +50,13 @@ fn main() {
         .manage(FailedDeletions::default())
         .manage(OpenFailures::default())
         .manage(EarlyLinks::default())
+        .manage(NotifyLimits::default())
         .setup(|app| {
             diagnostics::record_panics(app.handle().clone());
             let servers_file = app.path().app_config_dir()?.join("servers.json");
             app.manage(ServerStore::new(servers_file));
             app.manage(tab_session::start(app.handle()));
+            user_notifications::install(app.handle());
             opened_url::handle_early_links(app.handle());
 
             let handle = app.handle().clone();
