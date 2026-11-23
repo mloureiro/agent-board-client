@@ -1,5 +1,4 @@
-import type { FailedDeletion, Server } from './backend';
-import { storeDeletionMessage } from './messages';
+import type { Server } from './backend';
 
 export interface ServerListActions {
   readonly test: (server: Server) => Promise<void>;
@@ -102,7 +101,11 @@ function renameForm(
   return form;
 }
 
-function serverRow(server: Server, actions: ServerListActions): HTMLLIElement {
+function serverRow(
+  server: Server,
+  flagged: ReadonlySet<string>,
+  actions: ServerListActions,
+): HTMLLIElement {
   const name = document.createElement('span');
   name.className = 'server-name';
   name.textContent = server.name;
@@ -149,6 +152,7 @@ function serverRow(server: Server, actions: ServerListActions): HTMLLIElement {
   const row = document.createElement('li');
   row.className = 'server';
   row.dataset.serverId = server.id;
+  row.toggleAttribute('data-flagged', flagged.has(server.id));
   row.append(identity, controls);
   return row;
 }
@@ -157,48 +161,33 @@ export function renderServerList(
   list: HTMLElement,
   emptyState: HTMLElement,
   servers: readonly Server[],
+  flagged: ReadonlySet<string>,
   actions: ServerListActions,
 ): void {
   cancelActiveEdit = null;
-  list.replaceChildren(...servers.map((server) => serverRow(server, actions)));
+  list.replaceChildren(...servers.map((server) => serverRow(server, flagged, actions)));
   emptyState.hidden = servers.length > 0;
 }
 
-function deletionRow(
-  failure: FailedDeletion,
-  retrying: boolean,
-  retry: (failure: FailedDeletion) => void,
-): HTMLLIElement {
-  const message = document.createElement('span');
-  message.textContent = storeDeletionMessage(failure.name);
-
-  const retryButton = button('Retry', 'primary', () => {
-    retry(failure);
-  });
-  retryButton.disabled = retrying;
-
-  const row = document.createElement('li');
-  row.className = 'deletion-error';
-  row.dataset.serverId = failure.id;
-  row.append(message, retryButton);
-  return row;
+function rowFor(list: HTMLElement, serverId: string): HTMLElement | null {
+  for (const row of list.children) {
+    if (row instanceof HTMLElement && row.dataset.serverId === serverId) return row;
+  }
+  return null;
 }
 
-export function renderDeletionErrors(
-  container: HTMLElement,
-  failures: readonly FailedDeletion[],
-  retrying: ReadonlySet<string>,
-  retry: (failure: FailedDeletion) => void,
-): void {
-  container.replaceChildren(
-    ...failures.map((failure) => deletionRow(failure, retrying.has(failure.id), retry)),
-  );
+export function markFlagged(list: HTMLElement, flagged: ReadonlySet<string>): void {
+  for (const row of list.children) {
+    if (row instanceof HTMLElement) {
+      row.toggleAttribute('data-flagged', flagged.has(row.dataset.serverId ?? ''));
+    }
+  }
+}
+
+export function revealRow(list: HTMLElement, serverId: string): void {
+  rowFor(list, serverId)?.scrollIntoView({ block: 'nearest' });
 }
 
 export function focusRename(list: HTMLElement, serverId: string): void {
-  for (const row of list.children) {
-    if (row instanceof HTMLElement && row.dataset.serverId === serverId) {
-      row.querySelector<HTMLButtonElement>('button[data-rename]')?.focus();
-    }
-  }
+  rowFor(list, serverId)?.querySelector<HTMLButtonElement>('button[data-rename]')?.focus();
 }

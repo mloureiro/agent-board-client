@@ -8,17 +8,56 @@ body {
   margin: 0;
 }
 
+.sprite {
+  position: absolute;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+body {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+}
+
+.app-head,
 main {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: var(--space-8) var(--space-6);
+  padding-inline: max(var(--space-4), calc((100% - var(--content-max-width)) / 2));
+}
+
+.app-head {
+  display: grid;
+  gap: var(--space-3);
+  padding-block: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+main {
+  min-height: 0;
+  padding-block: var(--space-4) var(--space-8);
+  overflow: auto;
 }
 
 h1 {
-  margin: 0 0 var(--space-4);
-  font-size: 22px;
+  margin: 0;
+  font-size: var(--text-lg);
   font-weight: 650;
   letter-spacing: -0.01em;
+}
+
+h1 small {
+  margin-left: var(--space-2);
+  color: var(--text-muted);
+  font-size: 14px;
+  font-weight: 400;
 }
 
 h2 {
@@ -35,61 +74,55 @@ h2 {
   list-style: none;
 }
 
-.deletion-errors {
+.panel {
   display: grid;
-  gap: var(--space-2);
-  margin: 0 0 var(--space-4);
+  max-height: 132px;
+  margin: 0;
   padding: 0;
+  overflow: auto;
   list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
 }
 
-.deletion-errors:empty {
+.panel[hidden] {
   display: none;
 }
 
-.deletion-error > button {
-  margin-left: auto;
-}
-
-.deletion-error {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--danger);
-  border-radius: var(--radius);
-  background: var(--surface-raised);
-  color: var(--danger);
-  overflow-wrap: anywhere;
-}
-
-.callout {
+.panel li {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin: 0 0 var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--danger);
-  border-left-width: 4px;
-  border-radius: var(--radius);
-  background: var(--surface-raised);
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+
+.panel li + li {
+  border-top: 1px solid var(--border);
+}
+
+.panel .icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--danger);
+}
+
+.panel [data-tone='ok'] .icon {
+  color: var(--success);
+}
+
+.panel p {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
   overflow-wrap: anywhere;
 }
 
-.callout[hidden] {
-  display: none;
-}
-
-.callout[data-tone='ok'] {
-  border-color: var(--success);
-}
-
-.callout-message {
-  margin: 0;
-  padding-top: var(--space-2);
+.panel button {
+  flex: none;
+  margin: calc(-1 * var(--space-1)) 0;
 }
 
 .server {
@@ -102,6 +135,10 @@ h2 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-raised);
+}
+
+.server[data-flagged] {
+  box-shadow: inset 3px 0 0 var(--danger);
 }
 
 .server-identity {
@@ -220,10 +257,4 @@ button:disabled {
 :is(button, input):focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
-}
-
-.status {
-  min-height: 1.45em;
-  margin: var(--space-4) 0 0;
-  color: var(--danger);
 }
