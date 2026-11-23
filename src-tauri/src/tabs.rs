@@ -52,6 +52,8 @@ pub fn page_of(path: &str) -> Route {
 
 use serde::Serialize;
 
+use crate::health::{Banner, Health};
+use crate::sentinel::HealthReport;
 use crate::tab_state::{SavedTab, SavedTabs};
 
 pub const HOME: u64 = 0;
@@ -87,6 +89,7 @@ pub enum Effect {
     Hide(u64),
     Destroy(u64),
     Changed,
+    Banner,
     LimitReached,
 }
 
@@ -101,6 +104,7 @@ pub struct TabView {
 pub struct TabsView {
     pub selected: u64,
     pub tabs: Vec<TabView>,
+    pub banner: Option<Banner>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -108,6 +112,7 @@ pub struct TabSession {
     tabs: Vec<Tab>,
     selected: u64,
     next_id: u64,
+    health: Health,
 }
 
 impl Default for TabSession {
@@ -116,6 +121,7 @@ impl Default for TabSession {
             tabs: Vec::new(),
             selected: HOME,
             next_id: 1,
+            health: Health::default(),
         }
     }
 }
@@ -143,6 +149,7 @@ impl TabSession {
             next_id: tabs.len() as u64 + 1,
             tabs,
             selected: HOME,
+            health: Health::default(),
         }
     }
 
@@ -340,6 +347,18 @@ impl TabSession {
         self.select(order[target])
     }
 
+    pub fn report_health(&mut self, report: HealthReport) -> Vec<Effect> {
+        if self.health.report(report) {
+            vec![Effect::Banner]
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn banner(&self) -> Option<Banner> {
+        self.health.banner()
+    }
+
     pub fn view(&self) -> TabsView {
         let home = TabView {
             id: HOME,
@@ -354,6 +373,7 @@ impl TabSession {
         TabsView {
             selected: self.selected,
             tabs: std::iter::once(home).chain(others).collect(),
+            banner: self.health.banner(),
         }
     }
 }
@@ -438,6 +458,7 @@ mod tests {
             next_id: tabs.len() as u64 + 1,
             tabs,
             selected,
+            health: Health::default(),
         }
     }
 
@@ -836,6 +857,21 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn reports_a_banner_change_without_touching_what_is_saved() {
+        let mut open = session(&["/backlog"], 1, &[]);
+        let saved = open.saved();
+
+        assert_eq!(open.report_health(HealthReport::Down), vec![Effect::Banner]);
+        assert_eq!(open.view().banner, Some(Banner::Unreachable));
+        assert_eq!(open.saved(), saved);
+
+        assert_eq!(open.report_health(HealthReport::Down), Vec::new());
+        assert_eq!(open.report_health(HealthReport::Ok), vec![Effect::Banner]);
+        assert_eq!(open.view().banner, None);
+        assert_eq!(open.report_health(HealthReport::Ok), Vec::new());
     }
 
     #[test]

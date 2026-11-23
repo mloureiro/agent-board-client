@@ -188,5 +188,129 @@
     }
   }
 
+  const PROBE_PATH = '/trpc/me';
+  const DOWN_AFTER_MS = 8000;
+  const GATEWAY_STATUSES = [502, 503, 504];
+
+  function observeFetch() {
+    if (typeof win.fetch !== 'function') {
+      return;
+    }
+    const originalFetch = win.fetch.bind(win);
+    let state = 'unknown';
+    let failures = 0;
+    let firstFailureAt = 0;
+    let probing = false;
+
+    function isTrpc(input) {
+      const target =
+        input !== null && typeof input === 'object' && typeof input.url === 'string'
+          ? input.url
+          : input;
+      const url = resolve(target);
+      return url !== null && (url.pathname === '/trpc' || url.pathname.startsWith('/trpc/'));
+    }
+
+    function record(outcome) {
+      let next = state;
+      if (outcome === 'failure') {
+        const now = win.Date.now();
+        if (failures === 0) {
+          firstFailureAt = now;
+        }
+        failures += 1;
+        if (failures >= 2 && now - firstFailureAt >= DOWN_AFTER_MS) {
+          next = 'down';
+        }
+      } else {
+        failures = 0;
+        next = outcome === 'success' ? 'ok' : 'session';
+      }
+      if (next !== state) {
+        state = next;
+        send('agent-board-client:health?state=' + next);
+      }
+    }
+
+    function responseOutcome(response) {
+      if (response.status === 401) {
+        return 'session';
+      }
+      if (GATEWAY_STATUSES.includes(response.status)) {
+        return 'failure';
+      }
+      const type = String(response.headers.get('content-type') || '');
+      if (response.redirected === true || type.startsWith('text/html')) {
+        return 'session';
+      }
+      return 'success';
+    }
+
+    function probeOutcome(response) {
+      if (response.type === 'opaqueredirect' || response.status === 401) {
+        return 'session';
+      }
+      return 'failure';
+    }
+
+    function probe() {
+      if (probing) {
+        return;
+      }
+      probing = true;
+      Promise.resolve()
+        .then(function () {
+          return originalFetch(PROBE_PATH, {
+            redirect: 'manual',
+            cache: 'no-store',
+            credentials: 'same-origin',
+          });
+        })
+        .then(probeOutcome, function () {
+          return 'failure';
+        })
+        .then(function (outcome) {
+          probing = false;
+          record(outcome);
+        })
+        .catch(function () {
+          probing = false;
+        });
+    }
+
+    function onResponse(response) {
+      try {
+        record(responseOutcome(response));
+      } catch {
+        return;
+      }
+    }
+
+    function onError(error) {
+      try {
+        if (error && error.name === 'AbortError') {
+          return;
+        }
+        probe();
+      } catch {
+        return;
+      }
+    }
+
+    win.fetch = function (...args) {
+      const promise = originalFetch(...args);
+      try {
+        if (isTrpc(args[0])) {
+          promise.then(onResponse, onError);
+        }
+      } catch {
+        return promise;
+      }
+      return promise;
+    };
+  }
+
+  observeFetch();
+
   install(role === 'home' ? notify : function () {});
 });

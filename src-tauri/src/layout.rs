@@ -1,6 +1,7 @@
 use tauri::{LogicalPosition, LogicalSize, Rect};
 
 pub const TAB_BAR_HEIGHT: f64 = 36.0;
+pub const BANNER_HEIGHT: f64 = 28.0;
 const TAB_BAR_PREFIX: &str = "tabbar-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,8 +26,13 @@ pub fn slot_of(webview_label: &str) -> Slot {
     }
 }
 
-pub fn bounds(slot: Slot, width: f64, height: f64) -> Bounds {
-    let bar = TAB_BAR_HEIGHT.min(height).max(0.0);
+pub fn bounds(slot: Slot, width: f64, height: f64, banner: bool) -> Bounds {
+    let strip = if banner {
+        TAB_BAR_HEIGHT + BANNER_HEIGHT
+    } else {
+        TAB_BAR_HEIGHT
+    };
+    let bar = strip.min(height).max(0.0);
     match slot {
         Slot::TabBar => Bounds {
             x: 0.0,
@@ -58,58 +64,52 @@ mod tests {
 
     #[test]
     fn places_the_bar_above_the_content() {
+        let at = |x: f64, y: f64, width: f64, height: f64| Bounds {
+            x,
+            y,
+            width,
+            height,
+        };
         let cases = [
             (
                 Slot::TabBar,
                 1280.0,
                 860.0,
-                Bounds {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1280.0,
-                    height: 36.0,
-                },
+                false,
+                at(0.0, 0.0, 1280.0, 36.0),
             ),
             (
                 Slot::Content,
                 1280.0,
                 860.0,
-                Bounds {
-                    x: 0.0,
-                    y: 36.0,
-                    width: 1280.0,
-                    height: 824.0,
-                },
+                false,
+                at(0.0, 36.0, 1280.0, 824.0),
             ),
+            (Slot::TabBar, 400.0, 20.0, false, at(0.0, 0.0, 400.0, 20.0)),
+            (Slot::Content, 400.0, 20.0, false, at(0.0, 20.0, 400.0, 0.0)),
             (
                 Slot::TabBar,
-                400.0,
-                20.0,
-                Bounds {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 400.0,
-                    height: 20.0,
-                },
+                1280.0,
+                860.0,
+                true,
+                at(0.0, 0.0, 1280.0, 64.0),
             ),
             (
                 Slot::Content,
-                400.0,
-                20.0,
-                Bounds {
-                    x: 0.0,
-                    y: 20.0,
-                    width: 400.0,
-                    height: 0.0,
-                },
+                1280.0,
+                860.0,
+                true,
+                at(0.0, 64.0, 1280.0, 796.0),
             ),
+            (Slot::TabBar, 400.0, 20.0, true, at(0.0, 0.0, 400.0, 20.0)),
+            (Slot::Content, 400.0, 20.0, true, at(0.0, 20.0, 400.0, 0.0)),
         ];
 
-        for (slot, width, height, expected) in cases {
+        for (slot, width, height, banner, expected) in cases {
             assert_eq!(
-                bounds(slot, width, height),
+                bounds(slot, width, height, banner),
                 expected,
-                "{slot:?} in {width}x{height}"
+                "{slot:?} in {width}x{height} banner={banner}"
             );
         }
     }
