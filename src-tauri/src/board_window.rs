@@ -14,7 +14,7 @@ use crate::connection;
 use crate::error::ClientError;
 use crate::layout::{self, Slot};
 use crate::link_route::{self, LinkRoute};
-use crate::notify::{Notice, NotifyLimits};
+use crate::notify::{self, ClickTarget, Notice, NotifyLimits};
 use crate::sentinel::{self, Signal};
 use crate::server_url::check_server_url;
 use crate::store::{Server, ServerStore};
@@ -291,6 +291,28 @@ pub fn open(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
 
     let url = check_server_url(server.url.as_str())?;
     build_window(app, server, url)
+}
+
+pub fn open_from_notification(app: &AppHandle, server: &str, path: &str) {
+    let Ok(id) = Uuid::parse_str(server) else {
+        return;
+    };
+    let Some(window) = app.get_window(&window_label(id)) else {
+        return;
+    };
+
+    if let Err(error) = window.unminimize() {
+        eprintln!("server {id}: could not unminimize the window: {error}");
+    }
+    if let Err(error) = window.set_focus() {
+        eprintln!("server {id}: could not focus the window: {error}");
+    }
+    eprintln!("server {id}: notification clicked");
+
+    let _ = tab_session::apply(app, id, |session| match notify::click_target(path) {
+        ClickTarget::Task(task) => session.open(&task),
+        ClickTarget::Home => session.select(HOME),
+    });
 }
 
 pub async fn connect_and_open(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
