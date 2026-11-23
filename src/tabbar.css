@@ -122,3 +122,15 @@ body {
     transition: background-color var(--duration-fast);
   }
 }
+
+.banner {
+  height: var(--banner-height);
+  padding: 0 var(--space-3);
+  overflow: hidden;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  line-height: calc(var(--banner-height) - 1px);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

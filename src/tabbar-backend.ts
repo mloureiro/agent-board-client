@@ -7,9 +7,12 @@ export interface TabView {
   readonly home: boolean;
 }
 
+export type Banner = 'unreachable' | 'sessionExpired';
+
 export interface TabsView {
   readonly selected: number;
   readonly tabs: readonly TabView[];
+  readonly banner: Banner | null;
 }
 
 export function tabsSnapshot(): Promise<TabsView> {

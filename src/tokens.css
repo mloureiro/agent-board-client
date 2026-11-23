@@ -23,6 +23,7 @@
   --surface-selected: light-dark(#ffffff, #2c2f33);
 
   --tabbar-height: 36px;
+  --banner-height: 28px;
   --tab-min-width: 96px;
   --tab-max-width: 200px;
   --tab-home-width: 48px;

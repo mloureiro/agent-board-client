@@ -15,7 +15,7 @@ use crate::error::ClientError;
 use crate::layout::{self, Slot};
 use crate::link_route::{self, LinkRoute};
 use crate::notify::{self, ClickTarget, Notice, NotifyLimits};
-use crate::sentinel::{self, Signal};
+use crate::sentinel::{self, HealthReport, Signal};
 use crate::server_url::check_server_url;
 use crate::store::{Server, ServerStore};
 use crate::tab_session::{self, TabSessions};
@@ -93,17 +93,33 @@ fn route_new_window(app: &AppHandle, id: Uuid, server_url: &Url, requested: &Url
     }
 }
 
+fn sender_on_origin(app: &AppHandle, id: Uuid, tab: u64, server_url: &Url) -> bool {
+    app.get_webview(&tab_label(id, tab))
+        .and_then(|webview| webview.url().ok())
+        .is_some_and(|url| url.origin() == server_url.origin())
+}
+
+fn raise_health(app: &AppHandle, id: Uuid, tab: u64, report: HealthReport) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Ok(server) = app.state::<ServerStore>().find(id) else {
+            return;
+        };
+        if !sender_on_origin(&app, id, tab, &server.url) {
+            eprintln!("server {id}: health report from another origin dropped");
+            return;
+        }
+        let _ = tab_session::apply(&app, id, |session| session.report_health(report));
+    });
+}
+
 fn raise_notification(app: &AppHandle, id: Uuid, notice: Notice) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let Ok(server) = app.state::<ServerStore>().find(id) else {
             return;
         };
-        let sender_on_origin = app
-            .get_webview(&tab_label(id, HOME))
-            .and_then(|webview| webview.url().ok())
-            .is_some_and(|url| url.origin() == server.url.origin());
-        if !sender_on_origin {
+        if !sender_on_origin(&app, id, HOME, &server.url) {
             eprintln!("server {id}: notification from another origin dropped");
             return;
         }
@@ -126,6 +142,7 @@ fn handle_navigation(app: &AppHandle, id: Uuid, tab: u64, requested: &Url) -> bo
             let _ = tab_session::apply(app, id, |session| session.route(tab, &path));
         }
         Some(Signal::Notify(notice)) if tab == HOME => raise_notification(app, id, notice),
+        Some(Signal::Health(report)) => raise_health(app, id, tab, report),
         Some(Signal::Cycle(next)) => {
             let _ = tab_session::apply(app, id, |session| session.cycle(next));
         }
@@ -198,7 +215,8 @@ pub fn add_board_webview(
 ) -> Result<(), ClientError> {
     let builder = with_own_storage(app, board_builder(app, id, server_url, tab, target), id)?;
     let (width, height) = window_size(window)?;
-    let content = layout::bounds(Slot::Content, width, height);
+    let banner = banner_shown(app, id);
+    let content = layout::bounds(Slot::Content, width, height, banner);
     window.add_child(
         builder,
         LogicalPosition::new(content.x, content.y),
@@ -207,9 +225,9 @@ pub fn add_board_webview(
     Ok(())
 }
 
-fn add_tab_bar(window: &Window, id: Uuid) -> Result<(), ClientError> {
+fn add_tab_bar(app: &AppHandle, window: &Window, id: Uuid) -> Result<(), ClientError> {
     let (width, height) = window_size(window)?;
-    let bar = layout::bounds(Slot::TabBar, width, height);
+    let bar = layout::bounds(Slot::TabBar, width, height, banner_shown(app, id));
     window.add_child(
         WebviewBuilder::new(
             tab_session::tabbar_label(id),
@@ -221,14 +239,31 @@ fn add_tab_bar(window: &Window, id: Uuid) -> Result<(), ClientError> {
     Ok(())
 }
 
+fn banner_shown(app: &AppHandle, id: Uuid) -> bool {
+    app.state::<TabSessions>().banner(id).is_some()
+}
+
+pub fn relayout(app: &AppHandle, id: Uuid) {
+    let Some(window) = app.get_window(&window_label(id)) else {
+        return;
+    };
+    match (window.inner_size(), window.scale_factor()) {
+        (Ok(size), Ok(scale)) => lay_out(app, id, size, scale),
+        (Err(error), _) | (_, Err(error)) => {
+            eprintln!("could not lay out the window of server {id}: {error}");
+        }
+    }
+}
+
 fn lay_out(app: &AppHandle, id: Uuid, size: PhysicalSize<u32>, scale_factor: f64) {
     let Some(window) = app.get_window(&window_label(id)) else {
         return;
     };
     let logical = size.to_logical::<f64>(scale_factor);
+    let banner = banner_shown(app, id);
     for webview in window.webviews() {
         let slot = layout::slot_of(webview.label());
-        let bounds = layout::bounds(slot, logical.width, logical.height);
+        let bounds = layout::bounds(slot, logical.width, logical.height, banner);
         if let Err(error) = webview.set_bounds(bounds.into()) {
             eprintln!("could not resize the window of server {id}: {error}");
         }
@@ -271,7 +306,7 @@ fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), Client
         _ => {}
     });
 
-    let built = add_tab_bar(&window, id)
+    let built = add_tab_bar(app, &window, id)
         .and_then(|()| add_board_webview(app, &window, id, &url, HOME, url.clone()));
     if built.is_ok() && selected != HOME {
         let _ = tab_session::apply(app, id, |session| session.select(selected));
