@@ -1,20 +1,11 @@
 import type { FailedDeletion } from './backend';
+import { icon } from './dom';
 import { storeDeletionMessage } from './messages';
 import type { Notice } from './notices';
 
 export interface PanelHandlers {
   readonly dismiss: (notice: Notice) => void;
   readonly retry: (failure: FailedDeletion) => void;
-}
-
-function icon(name: 'ok' | 'error'): SVGSVGElement {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'icon');
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', `#i-${name}`);
-  svg.append(use);
-  return svg;
 }
 
 function entry(tone: 'ok' | 'error', text: string, action: HTMLButtonElement): HTMLLIElement {

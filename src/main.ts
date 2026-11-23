@@ -14,6 +14,7 @@ import {
   testServer,
 } from './backend';
 import type { FailedDeletion, Server } from './backend';
+import { focusedKey, restoreFocus, revealNearest } from './dom';
 import {
   failureMessage,
   openFailureMessage,
@@ -27,7 +28,8 @@ import {
 import { clearFor, flaggedServers } from './notices';
 import type { Notice, NoticeAction, NoticeCause } from './notices';
 import { renderPanel } from './panel';
-import { focusRename, markFlagged, renderServerList, revealRow } from './server-list';
+import { findRow, markFlagged, renderServerList } from './server-list';
+import type { Editing, ListHandlers, ListView } from './server-list';
 import { checkServerUrl } from './server-url';
 import './styles.css';
 
@@ -48,9 +50,20 @@ const urlInput = element('server-url', HTMLInputElement);
 
 let notices: readonly Notice[] = [];
 let noticeCounter = 0;
-let servers: readonly Server[] = [];
 const failedDeletions = new Map<string, FailedDeletion>();
 const retrying = new Set<string>();
+
+const pending = new Map<string, 'test' | 'open'>();
+const view: { -readonly [K in keyof ListView]: ListView[K] } = {
+  servers: [],
+  editing: null,
+  confirming: null,
+  menuOpen: null,
+  pending,
+  removing: null,
+  flagged: new Set(),
+};
+let stale = false;
 
 function announce(text: string): void {
   live.textContent = '';
@@ -60,7 +73,7 @@ function announce(text: string): void {
 }
 
 function renderHeader(): void {
-  count.textContent = String(servers.length);
+  count.textContent = String(view.servers.length);
   renderPanel(panel, notices, [...failedDeletions.values()], retrying, {
     dismiss: (notice) => {
       notices = notices.filter((candidate) => candidate.id !== notice.id);
@@ -69,6 +82,32 @@ function renderHeader(): void {
     },
     retry: retryDeletion,
   });
+}
+
+interface ListRender {
+  readonly focus?: string;
+  readonly select?: boolean;
+  readonly reuseEditor?: boolean;
+}
+
+function renderList(options: ListRender = {}): void {
+  const before = focusedKey(list);
+  view.flagged = flaggedServers(notices);
+  renderServerList(list, emptyState, view, handlers, { reuseEditor: options.reuseEditor ?? true });
+  restoreFocus(list, options.focus ?? before, { select: options.select });
+}
+
+let pointerDown = false;
+let renderWhenPointerUp = false;
+
+function renderListSoon(): void {
+  if (pointerDown) {
+    renderWhenPointerUp = true;
+    return;
+  }
+  setTimeout(() => {
+    renderList();
+  }, 0);
 }
 
 function clear(action: NoticeAction): void {
@@ -88,7 +127,7 @@ function notify(
   renderHeader();
   panel.scrollTop = 0;
   markFlagged(list, flaggedServers(notices));
-  if (tone === 'error' && serverId !== null) revealRow(list, serverId);
+  if (tone === 'error' && serverId !== null) revealNearest(findRow(list, serverId));
   announce(text);
 }
 
@@ -141,81 +180,230 @@ async function showOpenFailure(): Promise<void> {
   notify('openedLink', null, 'error', openFailureMessage(failure.name, failure.error));
 }
 
-async function finishRename(server: Server): Promise<void> {
-  await refresh();
-  focusRename(list, server.id);
+function present(id: string): boolean {
+  return view.servers.some((server) => server.id === id);
+}
+
+async function loadList(options: ListRender = {}): Promise<void> {
+  view.servers = await listServers();
+  if (view.confirming !== null && !present(view.confirming)) view.confirming = null;
+  if (view.menuOpen !== null && !present(view.menuOpen)) view.menuOpen = null;
+  renderList(options);
+  renderHeader();
+}
+
+function requestReload(): Promise<void> {
+  if (view.editing !== null) {
+    stale = true;
+    return Promise.resolve();
+  }
+  return loadList();
+}
+
+function endEdit(): void {
+  if (view.editing === null) return;
+  view.editing = null;
+  clear('cancelRename');
+  if (stale) {
+    stale = false;
+    loadList().catch((failure: unknown) => {
+      reportStatus('startup', failure);
+    });
+  }
+}
+
+function lostFocus(): boolean {
+  return document.activeElement === null || document.activeElement === document.body;
+}
+
+async function runTest(server: Server): Promise<void> {
+  clear('test');
+  view.menuOpen = null;
+  pending.set(server.id, 'test');
+  renderList({ focus: `menu-${server.id}` });
+  try {
+    await testServer(server.id);
+    notify('test', server.id, 'ok', testResultMessage(server.name, null));
+  } catch (failure) {
+    notify('test', server.id, 'error', testResultMessage(server.name, failure));
+  }
+  pending.delete(server.id);
+  renderList({ focus: lostFocus() && view.editing === null ? `menu-${server.id}` : undefined });
+}
+
+async function runOpen(server: Server): Promise<void> {
+  clear('open');
+  pending.set(server.id, 'open');
+  renderList();
+  try {
+    await openServer(server.id);
+  } catch (failure) {
+    notify('open', server.id, 'error', openFailureMessage(server.name, failure));
+  }
+  pending.delete(server.id);
+  renderList({ focus: lostFocus() && view.editing === null ? `open-${server.id}` : undefined });
+}
+
+function startRename(server: Server): void {
+  endEdit();
+  view.menuOpen = null;
+  view.confirming = null;
+  view.editing = { id: server.id, value: server.name, saving: false, invalid: false };
+  renderList({ focus: 'rename-input', select: true });
+}
+
+function cancelRename(): void {
+  const editing = view.editing;
+  if (editing === null || editing.saving) return;
+  endEdit();
+  renderList({ focus: `menu-${editing.id}` });
+}
+
+async function saveRename(): Promise<void> {
+  const editing: Editing | null = view.editing;
+  const server = view.servers.find((candidate) => candidate.id === editing?.id);
+  if (editing === null || editing.saving || server === undefined) return;
+
+  clear('rename');
+  editing.saving = true;
+  editing.invalid = false;
+  renderList({ reuseEditor: false });
+
+  let savedWithWarning: string | null = null;
+  try {
+    await renameServer(server.id, editing.value);
+  } catch (failure) {
+    savedWithWarning = renameSavedMessage(failure);
+    if (savedWithWarning === null) {
+      editing.saving = false;
+      editing.invalid = true;
+      notify('rename', server.id, 'error', subjectMessage(server.name, failureMessage(failure)));
+      renderList({ focus: 'rename-input', reuseEditor: false });
+      return;
+    }
+  }
+
+  view.editing = null;
+  stale = false;
+  await loadList().catch((failure: unknown) => {
+    reportStatus('rename', failure);
+    renderList();
+  });
+  restoreFocus(list, `menu-${server.id}`);
+  if (savedWithWarning !== null) {
+    notify('rename', server.id, 'error', subjectMessage(editing.value.trim(), savedWithWarning));
+  }
 }
 
 async function removeAndReload(server: Server): Promise<void> {
   clear('remove');
+  const index = view.servers.findIndex((candidate) => candidate.id === server.id);
+  view.removing = server.id;
+  renderList();
   const removal = await removeServer(server.id).then(
     () => null,
     (failure: unknown) => ({ failure }),
   );
-  await refresh().catch((failure: unknown) => {
+  view.removing = null;
+  view.confirming = null;
+  await loadList().catch((failure: unknown) => {
     reportStatus('remove', failure);
+    renderList();
   });
   if (removal !== null) {
     notify('remove', null, 'error', removeFailureMessage(server.name, removal.failure));
   }
+  const next = view.servers[index] ?? view.servers[index - 1];
+  if (next === undefined) nameInput.focus();
+  else restoreFocus(list, `open-${next.id}`);
 }
 
-async function refresh(): Promise<void> {
-  servers = await listServers();
-  renderServerList(list, emptyState, servers, flaggedServers(notices), {
-    test: async (server) => {
-      clear('test');
-      try {
-        await testServer(server.id);
-        notify('test', server.id, 'ok', testResultMessage(server.name, null));
-      } catch (failure) {
-        notify('test', server.id, 'error', testResultMessage(server.name, failure));
-      }
-    },
-    open: async (server) => {
-      clear('open');
-      try {
-        await openServer(server.id);
-      } catch (failure) {
-        notify('open', server.id, 'error', openFailureMessage(server.name, failure));
-      }
-    },
-    remove: (server) => {
-      removeAndReload(server).catch((failure: unknown) => {
-        reportStatus('remove', failure);
-      });
-    },
-    rename: async (server, name) => {
-      clear('rename');
-      try {
-        await renameServer(server.id, name);
-        await finishRename(server);
-        return true;
-      } catch (failure) {
-        const saved = renameSavedMessage(failure);
-        if (saved === null) {
-          notify(
-            'rename',
-            server.id,
-            'error',
-            subjectMessage(server.name, failureMessage(failure)),
-          );
-          return false;
-        }
-        await finishRename(server);
-        const renamed = servers.find((candidate) => candidate.id === server.id);
-        notify('rename', server.id, 'error', subjectMessage(renamed?.name ?? name, saved));
-        return true;
-      }
-    },
-    cancelRename: () => {
-      clear('cancelRename');
-    },
-  });
-  renderHeader();
+const handlers: ListHandlers = {
+  open: (server) => {
+    runOpen(server).catch((failure: unknown) => {
+      reportStatus('open', failure);
+    });
+  },
+  openMenu: (server, itemIndex) => {
+    endEdit();
+    view.menuOpen = server.id;
+    renderList({ focus: `item-${server.id}-${String(itemIndex)}` });
+  },
+  closeMenu: (server) => {
+    view.menuOpen = null;
+    renderList({ focus: `menu-${server.id}` });
+  },
+  test: (server) => {
+    runTest(server).catch((failure: unknown) => {
+      reportStatus('test', failure);
+    });
+  },
+  startRename,
+  editValue: (value) => {
+    if (view.editing !== null) view.editing.value = value;
+  },
+  saveRename: () => {
+    saveRename().catch((failure: unknown) => {
+      reportStatus('rename', failure);
+    });
+  },
+  cancelRename,
+  askRemove: (server) => {
+    view.menuOpen = null;
+    view.confirming = server.id;
+    renderList({ focus: `confirm-cancel-${server.id}` });
+  },
+  cancelRemove: (server) => {
+    if (view.removing !== null) return;
+    view.confirming = null;
+    renderList({ focus: `menu-${server.id}` });
+  },
+  remove: (server) => {
+    removeAndReload(server).catch((failure: unknown) => {
+      reportStatus('remove', failure);
+    });
+  },
+  disarmRemove: () => {
+    if (view.confirming === null || view.removing !== null) return;
+    view.confirming = null;
+    renderListSoon();
+  },
+};
+
+document.addEventListener('pointerdown', (event) => {
+  pointerDown = true;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  let changed = false;
+  if (
+    view.menuOpen !== null &&
+    target.closest(`[data-menu="${CSS.escape(view.menuOpen)}"]`) === null
+  ) {
+    view.menuOpen = null;
+    changed = true;
+  }
+  if (
+    view.confirming !== null &&
+    view.removing === null &&
+    target.closest('[data-mode="confirming"]') === null
+  ) {
+    view.confirming = null;
+    changed = true;
+  }
+  if (changed) renderListSoon();
+});
+
+function releasePointer(): void {
+  pointerDown = false;
+  if (!renderWhenPointerUp) return;
+  renderWhenPointerUp = false;
+  renderListSoon();
 }
+document.addEventListener('pointerup', releasePointer);
+document.addEventListener('pointercancel', releasePointer);
 
 async function submit(): Promise<void> {
+  endEdit();
   clear('add');
   const checked = checkServerUrl(urlInput.value);
   if (!checked.ok) {
@@ -226,7 +414,7 @@ async function submit(): Promise<void> {
 
   await addServer(nameInput.value, checked.url);
   form.reset();
-  await refresh();
+  await loadList();
   nameInput.focus();
 }
 
@@ -243,13 +431,13 @@ function reportStartup(failure: unknown): void {
 
 Promise.all([
   onServersChanged(() => {
-    refresh().catch(reportStartup);
+    requestReload().catch(reportStartup);
   }),
   onOpenFailed(() => {
     showOpenFailure().catch(reportStartup);
   }),
 ])
-  .then(() => Promise.all([refresh(), showOpenFailure()]))
+  .then(() => Promise.all([loadList(), showOpenFailure()]))
   .catch(reportStartup);
 
 trackStoreDeletions().catch(reportStartup);

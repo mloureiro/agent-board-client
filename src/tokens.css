@@ -21,8 +21,12 @@
   --space-8: 32px;
   --radius: 8px;
   --text-sm: 12px;
+  --text-md: 14px;
   --text-lg: 18px;
   --content-max-width: 720px;
+  --panel-max-height: 132px;
+  --control-size: 34px;
+  --column-inset: max(var(--space-4), calc((100% - var(--content-max-width)) / 2));
   --shadow-overlay: 0 12px 32px light-dark(rgb(29 31 34 / 0.18), rgb(0 0 0 / 0.55));
   --backdrop: light-dark(rgb(29 31 34 / 0.28), rgb(0 0 0 / 0.5));
 
