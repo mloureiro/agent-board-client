@@ -278,18 +278,20 @@ async function saveRename(): Promise<void> {
       editing.saving = false;
       editing.invalid = true;
       notify('rename', server.id, 'error', subjectMessage(server.name, failureMessage(failure)));
-      renderList({ focus: 'rename-input', reuseEditor: false });
+      renderList(view.editing === editing ? { focus: 'rename-input', reuseEditor: false } : {});
       return;
     }
   }
 
-  view.editing = null;
-  stale = false;
+  if (view.editing === editing) {
+    view.editing = null;
+    stale = false;
+  }
   await loadList().catch((failure: unknown) => {
     reportStatus('rename', failure);
     renderList();
   });
-  restoreFocus(list, `menu-${server.id}`);
+  if (view.editing === null) restoreFocus(list, `menu-${server.id}`);
   if (savedWithWarning !== null) {
     notify('rename', server.id, 'error', subjectMessage(editing.value.trim(), savedWithWarning));
   }
