@@ -10,6 +10,8 @@
   --accent-text: light-dark(#ffffff, #10151c);
   --danger: light-dark(#b3261e, #ff9a92);
   --success: light-dark(#2e7d32, #8fd694);
+  --danger-surface: light-dark(#fbeceb, #3b2321);
+  --success-surface: light-dark(#e8f2e8, #1e3121);
 
   --space-1: 4px;
   --space-2: 8px;
@@ -18,6 +20,15 @@
   --space-6: 24px;
   --space-8: 32px;
   --radius: 8px;
+  --text-sm: 12px;
+  --text-md: 14px;
+  --text-lg: 18px;
+  --content-max-width: 720px;
+  --panel-max-height: 132px;
+  --control-size: 34px;
+  --column-inset: max(var(--space-4), calc((100% - var(--content-max-width)) / 2));
+  --shadow-overlay: 0 12px 32px light-dark(rgb(29 31 34 / 0.18), rgb(0 0 0 / 0.55));
+  --backdrop: light-dark(rgb(29 31 34 / 0.28), rgb(0 0 0 / 0.5));
 
   --surface-hover: light-dark(#ebe9e4, #222427);
   --surface-selected: light-dark(#ffffff, #2c2f33);

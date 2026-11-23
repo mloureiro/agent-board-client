@@ -217,12 +217,34 @@ pub fn add_board_webview(
     let (width, height) = window_size(window)?;
     let banner = banner_shown(app, id);
     let content = layout::bounds(Slot::Content, width, height, banner);
-    window.add_child(
+    let _webview = window.add_child(
         builder,
         LogicalPosition::new(content.x, content.y),
         LogicalSize::new(content.width, content.height),
     )?;
+    #[cfg(target_os = "macos")]
+    if let Err(error) = _webview.with_webview(move |platform| {
+        if !disable_backspace_navigation(platform.inner()) {
+            eprintln!("server {id}: tab {tab}: WebKit has no Backspace navigation switch; left on");
+        }
+    }) {
+        eprintln!("server {id}: tab {tab}: could not reach the WebKit view: {error}");
+    }
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn disable_backspace_navigation(web_view: *mut std::ffi::c_void) -> bool {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+
+    // SAFETY: wry hands over the live WKWebView; `configuration` and `preferences` are public API.
+    unsafe {
+        let web_view = &*web_view.cast::<AnyObject>();
+        let configuration: *mut AnyObject = msg_send![web_view, configuration];
+        let preferences: *mut AnyObject = msg_send![&*configuration, preferences];
+        crate::webkit_prefs::disable_backspace_navigation(&*preferences)
+    }
 }
 
 fn add_tab_bar(app: &AppHandle, window: &Window, id: Uuid) -> Result<(), ClientError> {

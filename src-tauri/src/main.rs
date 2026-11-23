@@ -19,6 +19,8 @@ mod tab_session;
 mod tab_state;
 mod tabs;
 mod user_notifications;
+#[cfg(target_os = "macos")]
+mod webkit_prefs;
 mod webview_store;
 
 use tauri::{AppHandle, Manager, RunEvent};

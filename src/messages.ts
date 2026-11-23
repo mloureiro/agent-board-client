@@ -47,3 +47,28 @@ export function failureMessage(failure: unknown): string {
 export function storeDeletionMessage(name: string | null): string {
   return `Couldn't delete the stored data of ${name ?? 'a removed server'}.`;
 }
+
+export function testResultMessage(label: string, failure: unknown): string {
+  if (failure === null) return `${label} answered. It can be opened.`;
+  return `${label} can't be reached. ${failureMessage(failure)}`;
+}
+
+export function openFailureMessage(name: string, failure: unknown): string {
+  return `${name} couldn't be opened. ${failureMessage(failure)}`;
+}
+
+export function removeFailureMessage(name: string, failure: unknown): string {
+  if (isBackendError(failure) && failure.kind === 'window') {
+    return `${name} was removed, but its window could not be closed: ${failure.message}`;
+  }
+  return `${name} could not be removed. ${failureMessage(failure)}`;
+}
+
+export function renameSavedMessage(failure: unknown): string | null {
+  if (!isBackendError(failure) || failure.kind !== 'window') return null;
+  return `The name was saved, but the window title could not be updated: ${failure.message}`;
+}
+
+export function subjectMessage(name: string, text: string): string {
+  return `${name}: ${text.charAt(0).toLowerCase()}${text.slice(1)}`;
+}
