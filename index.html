@@ -7,16 +7,36 @@
     <title>Agent Board</title>
   </head>
   <body>
+    <svg width="0" height="0" aria-hidden="true" focusable="false" class="sprite">
+      <symbol id="i-error" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.5" />
+        <path
+          d="M8 4.6v4.1M8 11v.4"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="i-ok" viewBox="0 0 16 16">
+        <circle cx="8" cy="8" r="6.75" fill="none" stroke="currentColor" stroke-width="1.5" />
+        <path
+          d="M5.2 8.3l1.9 1.9 3.8-4.2"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.6"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
+      </symbol>
+    </svg>
+
+    <header class="app-head">
+      <h1>Servers <small id="count"></small></h1>
+      <ul id="panel" class="panel" hidden></ul>
+    </header>
+
     <main>
-      <h1>Servers</h1>
-
-      <div id="callout" class="callout" role="alert" hidden>
-        <p id="callout-message" class="callout-message"></p>
-        <button id="callout-dismiss" type="button" class="quiet">Dismiss</button>
-      </div>
-
-      <ul id="deletion-errors" class="deletion-errors" aria-live="polite"></ul>
-
       <ul id="servers" class="servers"></ul>
       <p id="empty" class="empty" hidden>No servers yet. Add the address of a board below.</p>
 
@@ -42,9 +62,9 @@
         </label>
         <button type="submit" class="primary">Add server</button>
       </form>
-
-      <p id="status" class="status" role="status" aria-live="polite"></p>
     </main>
+
+    <p id="live" class="sr-only" aria-live="polite"></p>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
