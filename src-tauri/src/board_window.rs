@@ -1,3 +1,4 @@
+use tauri::utils::config::BackgroundThrottlingPolicy;
 use tauri::webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder};
 use tauri::window::WindowBuilder;
 use tauri::{
@@ -136,7 +137,7 @@ fn board_builder(
         });
 
     if tab == HOME {
-        return builder;
+        return builder.background_throttling(BackgroundThrottlingPolicy::Disabled);
     }
 
     let load_app = app.clone();
@@ -212,6 +213,8 @@ fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), Client
     let window = WindowBuilder::new(app, window_label(id))
         .title(&server.name)
         .inner_size(1280.0, 860.0)
+        // The window must stay open so the home tab keeps polling the board.
+        .closable(false)
         .build()?;
 
     let saved = tab_state::restore(tab_state::read(app, id));
