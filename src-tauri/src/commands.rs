@@ -141,7 +141,9 @@ pub fn tabs_snapshot(
 #[tauri::command]
 pub fn select_tab(app: AppHandle, webview: Webview, tab: u64) -> Result<(), ClientError> {
     let server = server_of_tabbar(webview.label()).ok_or(ClientError::NotFound)?;
-    tab_session::apply(&app, server, |session: &mut TabSession| session.select(tab))
+    tab_session::apply(&app, server, |session: &mut TabSession| {
+        session.activate(tab)
+    })
 }
 
 #[tauri::command]

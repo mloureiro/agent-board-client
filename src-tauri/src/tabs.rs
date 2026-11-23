@@ -269,6 +269,14 @@ impl TabSession {
         effects
     }
 
+    pub fn activate(&mut self, tab: u64) -> Vec<Effect> {
+        if tab == self.selected {
+            return vec![Effect::Show(tab)];
+        }
+
+        self.select(tab)
+    }
+
     pub fn close(&mut self, tab: u64) -> Vec<Effect> {
         let Some(index) = self.tabs.iter().position(|candidate| candidate.id == tab) else {
             return Vec::new();
@@ -863,5 +871,27 @@ mod tests {
             restored.open("/t/9").first(),
             Some(&Effect::Load(3, "/t/9".to_owned()))
         );
+    }
+
+    #[test]
+    fn activating_the_selected_tab_shows_it_without_changing_selection() {
+        let mut session = TabSession::default();
+        session.open("/t/1");
+        let selected = session.view().selected;
+
+        assert_eq!(session.activate(selected), vec![Effect::Show(selected)]);
+        assert_eq!(session.view().selected, selected);
+    }
+
+    #[test]
+    fn activating_another_tab_selects_it() {
+        let mut activated = TabSession::default();
+        activated.open("/t/1");
+        activated.open("/t/2");
+        let mut selected = TabSession::default();
+        selected.open("/t/1");
+        selected.open("/t/2");
+
+        assert_eq!(activated.activate(HOME), selected.select(HOME));
     }
 }
