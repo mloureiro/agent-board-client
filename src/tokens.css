@@ -12,6 +12,12 @@
   --success: light-dark(#2e7d32, #8fd694);
   --danger-surface: light-dark(#fbeceb, #3b2321);
   --success-surface: light-dark(#e8f2e8, #1e3121);
+  --banner-danger-surface: var(--danger-surface);
+  --banner-danger-lead: var(--danger);
+  --banner-danger-text: var(--text);
+  --banner-session-surface: var(--surface-raised);
+  --banner-session-lead: var(--accent);
+  --banner-session-text: var(--text);
 
   --space-1: 4px;
   --space-2: 8px;

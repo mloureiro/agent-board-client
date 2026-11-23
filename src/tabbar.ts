@@ -5,15 +5,35 @@ import './tabbar.css';
 const container = document.getElementById('tabs');
 const banner = document.getElementById('banner');
 
-const BANNER_TEXT: Record<Banner, string> = {
-  unreachable: 'This server is not answering. The board updates again when it is back.',
-  sessionExpired: 'Your session has expired. Sign in again to keep the board up to date.',
+const BANNER_COPY: Record<Banner, { lead: string; message: string }> = {
+  unreachable: {
+    lead: 'Not answering',
+    message: 'This server is not answering. The board updates again when it is back.',
+  },
+  sessionExpired: {
+    lead: 'Signed out',
+    message: 'Your session has expired. Sign in again to keep the board up to date.',
+  },
 };
 
 function renderBanner(kind: Banner | null): void {
   if (!banner) return;
-  banner.textContent = kind === null ? '' : BANNER_TEXT[kind];
-  banner.hidden = kind === null;
+  if (kind === null) {
+    banner.replaceChildren();
+    banner.removeAttribute('data-kind');
+    banner.hidden = true;
+    return;
+  }
+  const copy = BANNER_COPY[kind];
+  const lead = document.createElement('strong');
+  lead.className = 'banner-lead';
+  lead.textContent = copy.lead;
+  const message = document.createElement('span');
+  message.className = 'banner-message';
+  message.textContent = copy.message;
+  banner.replaceChildren(lead, message);
+  banner.dataset.kind = kind;
+  banner.hidden = false;
 }
 
 function logFailure(action: string): (error: unknown) => void {
