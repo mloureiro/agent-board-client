@@ -20,8 +20,18 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2.12.5",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.8",
     "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
     "eslint": "^10.15.0",
+    "jsdom": "^31.0.0",
+    "postcss": "^8.5.32",
+    "postcss-preset-mantine": "^1.18.0",
+    "postcss-simple-vars": "^7.0.1",
     "prettier": "^3.10.1",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.73.0",
@@ -29,6 +39,18 @@
     "vitest": "^5.1.0"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.12.5"
+    "@agent-board/shared": "github:mloureiro/agent-board#60866432a662c69b83c07c84b3864cbe2a751b83&path:packages/shared",
+    "@mantine/core": "^9.7.5",
+    "@mantine/hooks": "^9.7.5",
+    "@mantine/modals": "^9.7.5",
+    "@mantine/notifications": "^9.7.5",
+    "@tabler/icons-react": "^3.50.0",
+    "@tanstack/react-query": "^5.107.1",
+    "@tauri-apps/api": "^2.12.5",
+    "dayjs": "^1.11.23",
+    "hash-wasm": "^4.13.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5"
   }
 }
