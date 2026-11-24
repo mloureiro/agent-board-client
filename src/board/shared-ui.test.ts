@@ -16,4 +16,5 @@ it('keeps the numbers the native side reads equal to the shared contract', () =>
   expect(uiApi.uiApiVersion).toBe(UI_API_VERSION);
   expect(uiApi.minUiServer).toBe(MIN_UI_SERVER);
   expect(UI_SERVER_FEATURES).toContain(uiApi.eventsFeature);
+  expect(UI_SERVER_FEATURES).toContain(uiApi.handoffFeature);
 });

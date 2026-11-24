@@ -39,7 +39,7 @@
     "vitest": "^5.1.0"
   },
   "dependencies": {
-    "@agent-board/shared": "github:mloureiro/agent-board#60866432a662c69b83c07c84b3864cbe2a751b83&path:packages/shared",
+    "@agent-board/shared": "github:mloureiro/agent-board#4b85a7878bd2cb531c7dc896367224b51e53aa44&path:packages/shared",
     "@mantine/core": "^9.7.5",
     "@mantine/hooks": "^9.7.5",
     "@mantine/modals": "^9.7.5",
