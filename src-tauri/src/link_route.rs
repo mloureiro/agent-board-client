@@ -150,8 +150,8 @@ mod tests {
             ),
             (
                 "https://board.example.com/",
-                "https://other.example.com/handoff/abc",
-                LinkRoute::SystemBrowser,
+                "file:///handoff/abc",
+                LinkRoute::Drop,
             ),
             (
                 "http://[::1]:4000/",
