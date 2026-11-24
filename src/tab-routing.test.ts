@@ -134,6 +134,16 @@ describe('tab-routing home role', () => {
       expect(assigned).toEqual([]);
       expect(original[method]).toHaveBeenCalledTimes(1);
     });
+
+    it('passes a target it cannot parse to the original', () => {
+      const { win, original, assigned, flush } = setup();
+
+      win.history[method](null, '', 'http://[');
+      flush();
+
+      expect(assigned).toEqual([]);
+      expect(original[method]).toHaveBeenCalledTimes(1);
+    });
   });
 });
 
@@ -468,6 +478,7 @@ describe('tab-routing server health', () => {
       ['401', { status: 401 }, 'session'],
       ['a redirect', { redirected: true }, 'session'],
       ['an html page', { contentType: 'text/html; charset=utf-8' }, 'session'],
+      ['an html page in capitals', { contentType: 'Text/HTML; charset=UTF-8' }, 'session'],
       ['200', { status: 200 }, 'ok'],
       ['404', { status: 404 }, 'ok'],
       ['500', { status: 500 }, 'ok'],
@@ -479,8 +490,14 @@ describe('tab-routing server health', () => {
       expect(states(sent())).toEqual([expected]);
     });
 
-    it.each([502, 503, 504])('%i counts as a failure that turns into down', async (status) => {
-      const { request, sent, clock } = board(() => Promise.resolve(answer({ status })));
+    it.each([
+      ['502', { status: 502 }],
+      ['503', { status: 503 }],
+      ['504', { status: 504 }],
+      ['502 with an html page', { status: 502, contentType: 'text/html' }],
+      ['503 after a redirect', { status: 503, redirected: true }],
+    ] as [string, Reply][])('%s counts as a failure that turns into down', async (_name, reply) => {
+      const { request, sent, clock } = board(() => Promise.resolve(answer(reply)));
 
       await request('/trpc/x');
       clock.now = 1000;

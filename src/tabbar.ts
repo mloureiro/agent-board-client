@@ -17,7 +17,7 @@ const BANNER_COPY: Record<Banner, { lead: string; message: string }> = {
 };
 
 function renderBanner(kind: Banner | null): void {
-  if (!banner) return;
+  if (!banner || (banner.dataset.kind ?? null) === kind) return;
   if (kind === null) {
     banner.replaceChildren();
     banner.removeAttribute('data-kind');

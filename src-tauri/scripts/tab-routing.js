@@ -242,7 +242,7 @@
       if (GATEWAY_STATUSES.includes(response.status)) {
         return 'failure';
       }
-      const type = String(response.headers.get('content-type') || '');
+      const type = String(response.headers.get('content-type') || '').toLowerCase();
       if (response.redirected === true || type.startsWith('text/html')) {
         return 'session';
       }

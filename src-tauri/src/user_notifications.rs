@@ -117,13 +117,8 @@ mod native {
         let path_value = NSString::from_str(notice.path.as_deref().unwrap_or("/"));
         let info =
             NSDictionary::from_slices(&[&*server_key, &*path_key], &[&*server_value, &*path_value]);
-        // SAFETY: every key and value is an `NSString`, which is a property list type.
-        unsafe {
-            content.setUserInfo(
-                &*(&*info as *const NSDictionary<NSString, NSString>
-                    as *const NSDictionary<AnyObject, AnyObject>),
-            )
-        };
+        // SAFETY: every key and value is an `NSString`, which is an `AnyObject` and a property list type.
+        unsafe { content.setUserInfo(info.cast_unchecked::<AnyObject, AnyObject>()) };
         content
     }
 
