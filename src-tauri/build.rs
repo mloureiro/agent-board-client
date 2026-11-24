@@ -13,6 +13,8 @@ fn main() {
         "tabs_snapshot",
         "select_tab",
         "close_tab",
+        "board_call",
+        "board_state",
     ]);
 
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(app_manifest))

@@ -21,7 +21,8 @@ draw yet still open the board's own page, which may ask you to sign in and unloc
 - A board page cannot call the client's native commands. Only the server list window can, and the
   tab bar of each server window can call three tab commands (snapshot, select, close) for its own
   window only. The client's own pages (`board.html`) can call a fixed set of commands that act for
-  their own server only. None exists yet.
+  their own server only: one calls a board procedure, and one reports whether the board supports the
+  client's own pages.
 
 macOS 14 or newer is required. Other platforms compile but are untested.
 

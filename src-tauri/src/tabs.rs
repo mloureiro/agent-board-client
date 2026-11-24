@@ -52,6 +52,7 @@ pub fn page_of(path: &str) -> Route {
 
 use serde::Serialize;
 
+use crate::handshake::Handshake;
 use crate::health::{Banner, Health};
 use crate::sentinel::HealthReport;
 use crate::tab_kind::{NativePages, TabKind};
@@ -95,6 +96,7 @@ pub enum Effect {
     Zoom(Zoom),
     Changed,
     Banner,
+    Handshake,
     LimitReached,
 }
 
@@ -121,6 +123,8 @@ pub struct TabSession {
     health: Health,
     pages: NativePages,
     board_only: bool,
+    live: bool,
+    retry_handshake: bool,
 }
 
 impl Default for TabSession {
@@ -133,6 +137,8 @@ impl Default for TabSession {
             health: Health::default(),
             pages: NativePages::bundled().clone(),
             board_only: true,
+            live: false,
+            retry_handshake: false,
         }
     }
 }
@@ -175,6 +181,50 @@ impl TabSession {
 
     pub fn home_kind(&self) -> TabKind {
         self.kind_for(&Route::Home)
+    }
+
+    pub fn set_board_only(&mut self, board_only: bool) -> Vec<Effect> {
+        if self.board_only == board_only {
+            return Vec::new();
+        }
+        let home_before = self.home_kind();
+        self.board_only = board_only;
+
+        let mut effects = Vec::new();
+        let home_after = self.home_kind();
+        if home_after != home_before {
+            effects.push(Effect::Rebuild(HOME, "/".to_owned(), home_after));
+        }
+        let kinds: Vec<TabKind> = self
+            .tabs
+            .iter()
+            .map(|tab| self.kind_for(&Route::Page(tab.page.clone())))
+            .collect();
+        for (tab, kind) in self.tabs.iter_mut().zip(kinds) {
+            if tab.kind == kind {
+                continue;
+            }
+            tab.kind = kind;
+            if tab.loaded {
+                effects.push(Effect::Rebuild(tab.id, tab.path.clone(), kind));
+            }
+        }
+        effects
+    }
+
+    pub fn set_handshake(&mut self, handshake: &Handshake) -> Vec<Effect> {
+        self.live = handshake.events;
+        self.retry_handshake = handshake.state.retry_after_recovery();
+        self.set_board_only(handshake.state.board_only())
+    }
+
+    pub fn relay_wanted(&self) -> bool {
+        self.live
+            && (self.home_kind() == TabKind::Native
+                || self
+                    .tabs
+                    .iter()
+                    .any(|tab| tab.loaded && tab.kind == TabKind::Native))
     }
 
     pub fn tab_kinds(&self) -> Vec<(u64, TabKind)> {
@@ -405,11 +455,16 @@ impl TabSession {
     }
 
     pub fn report_health(&mut self, report: HealthReport) -> Vec<Effect> {
-        if self.health.report(report) {
-            vec![Effect::Banner]
-        } else {
-            Vec::new()
+        let was_unreachable = self.health.banner() == Some(Banner::Unreachable);
+        if !self.health.report(report) {
+            return Vec::new();
         }
+        let recovered = was_unreachable && self.health.banner().is_none();
+        if recovered && self.retry_handshake {
+            self.retry_handshake = false;
+            return vec![Effect::Banner, Effect::Handshake];
+        }
+        vec![Effect::Banner]
     }
 
     pub fn banner(&self) -> Option<Banner> {
@@ -1194,5 +1249,195 @@ mod tests {
             vec![Effect::Zoom(Zoom::default())]
         );
         assert_eq!(model.step_zoom(ZoomStep::Reset), vec![]);
+    }
+
+    #[test]
+    fn rebuilds_the_tabs_whose_kind_follows_the_board_only_flag() {
+        use Effect::*;
+
+        type Row = (
+            &'static str,
+            TabSession,
+            bool,
+            Vec<Effect>,
+            Vec<(u64, TabKind)>,
+        );
+        let cases: Vec<Row> = vec![
+            (
+                "a loaded tab turns native",
+                kind_session(&["/settings"], 1, &[], &[PageKind::Settings], true),
+                false,
+                vec![Rebuild(1, "/settings".into(), TabKind::Native)],
+                vec![(HOME, TabKind::Board), (1, TabKind::Native)],
+            ),
+            (
+                "a loaded tab turns back to board",
+                kind_session(&["/settings"], 1, &[], &[PageKind::Settings], false),
+                true,
+                vec![Rebuild(1, "/settings".into(), TabKind::Board)],
+                vec![(HOME, TabKind::Board), (1, TabKind::Board)],
+            ),
+            (
+                "an unloaded tab only changes its kind",
+                kind_session(&["/settings"], 0, &[1], &[PageKind::Settings], true),
+                false,
+                vec![],
+                vec![(HOME, TabKind::Board), (1, TabKind::Native)],
+            ),
+            (
+                "home turns native before the tabs",
+                kind_session(
+                    &["/settings"],
+                    1,
+                    &[],
+                    &[PageKind::Home, PageKind::Settings],
+                    true,
+                ),
+                false,
+                vec![
+                    Rebuild(HOME, "/".into(), TabKind::Native),
+                    Rebuild(1, "/settings".into(), TabKind::Native),
+                ],
+                vec![(HOME, TabKind::Native), (1, TabKind::Native)],
+            ),
+            (
+                "an unchanged flag",
+                kind_session(&["/settings"], 1, &[], &[PageKind::Settings], false),
+                false,
+                vec![],
+                vec![(HOME, TabKind::Board), (1, TabKind::Native)],
+            ),
+            (
+                "no tabs",
+                kind_session(&[], 0, &[], &[PageKind::Settings], true),
+                false,
+                vec![],
+                vec![(HOME, TabKind::Board)],
+            ),
+        ];
+
+        for (name, mut session, board_only, effects, kinds) in cases {
+            assert_eq!(
+                session.set_board_only(board_only),
+                effects,
+                "{name}: effects"
+            );
+            assert_eq!(session.tab_kinds(), kinds, "{name}: kinds");
+        }
+    }
+
+    #[test]
+    fn wants_the_relay_only_while_a_native_webview_is_live() {
+        let live = |mut session: TabSession, live: bool| {
+            session.live = live;
+            session
+        };
+        let settings = &[PageKind::Settings];
+        let cases = [
+            (
+                "not live",
+                live(kind_session(&["/settings"], 1, &[], settings, false), false),
+                false,
+            ),
+            (
+                "live with board tabs only",
+                live(kind_session(&["/settings"], 1, &[], settings, true), true),
+                false,
+            ),
+            (
+                "live with a native tab",
+                live(kind_session(&["/settings"], 1, &[], settings, false), true),
+                true,
+            ),
+            (
+                "live with only an unloaded native tab",
+                live(kind_session(&["/settings"], 0, &[1], settings, false), true),
+                false,
+            ),
+            (
+                "live with a native home",
+                live(kind_session(&[], 0, &[], &[PageKind::Home], false), true),
+                true,
+            ),
+        ];
+
+        for (name, session, wanted) in cases {
+            assert_eq!(session.relay_wanted(), wanted, "{name}");
+        }
+    }
+
+    #[test]
+    fn records_what_a_handshake_decided() {
+        use crate::handshake::BoardState;
+
+        let mut session = kind_session(&["/settings"], 1, &[], &[PageKind::Settings], true);
+
+        let effects = session.set_handshake(&Handshake {
+            state: BoardState::Ready,
+            events: true,
+        });
+        assert_eq!(
+            effects,
+            vec![Effect::Rebuild(1, "/settings".into(), TabKind::Native)]
+        );
+        assert!(session.live && !session.retry_handshake);
+
+        let effects = session.set_handshake(&Handshake {
+            state: BoardState::Offline,
+            events: false,
+        });
+        assert_eq!(
+            effects,
+            vec![Effect::Rebuild(1, "/settings".into(), TabKind::Board)]
+        );
+        assert!(!session.live && session.retry_handshake);
+    }
+
+    #[test]
+    fn asks_for_another_handshake_once_a_failed_board_answers_again() {
+        use Effect::{Banner, Handshake};
+
+        let rows: [(&str, bool, &[HealthReport], Vec<Effect>); 4] = [
+            (
+                "down then ok with a retry pending",
+                true,
+                &[HealthReport::Down, HealthReport::Ok],
+                vec![Banner, Handshake],
+            ),
+            (
+                "down then ok without one",
+                false,
+                &[HealthReport::Down, HealthReport::Ok],
+                vec![Banner],
+            ),
+            (
+                "ok with no prior down",
+                true,
+                &[HealthReport::Ok, HealthReport::Ok],
+                vec![],
+            ),
+            (
+                "down then ok twice",
+                true,
+                &[HealthReport::Down, HealthReport::Ok, HealthReport::Ok],
+                vec![],
+            ),
+        ];
+
+        for (name, retry, reports, expected) in rows {
+            let mut session = session(&[], 0, &[]);
+            session.retry_handshake = retry;
+            let last = reports
+                .iter()
+                .map(|report| session.report_health(*report))
+                .last()
+                .unwrap();
+
+            assert_eq!(last, expected, "{name}");
+            assert!(
+                !session.retry_handshake || !retry || name.contains("no prior"),
+                "{name}"
+            );
+        }
     }
 }

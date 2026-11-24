@@ -1,10 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod board_api;
+mod board_events;
 mod board_window;
 mod commands;
 mod connection;
 mod diagnostics;
 mod error;
+mod handshake;
 mod health;
 mod layout;
 mod link_route;
@@ -14,12 +17,14 @@ mod notify;
 mod opened_url;
 mod sentinel;
 mod server_url;
+mod session_store;
 mod shortcuts;
 mod store;
 mod tab_kind;
 mod tab_session;
 mod tab_state;
 mod tabs;
+mod ui_api;
 mod user_notifications;
 #[cfg(target_os = "macos")]
 mod webkit_prefs;
@@ -28,6 +33,8 @@ mod zoom;
 
 use tauri::{AppHandle, Manager, RunEvent};
 
+use crate::board_api::BoardHttp;
+use crate::board_events::Relays;
 use crate::notify::NotifyLimits;
 use crate::opened_url::{EarlyLinks, OpenFailures};
 use crate::store::ServerStore;
@@ -57,10 +64,12 @@ fn main() {
         .manage(OpenFailures::default())
         .manage(EarlyLinks::default())
         .manage(NotifyLimits::default())
+        .manage(Relays::default())
         .setup(|app| {
             diagnostics::record_panics(app.handle().clone());
             let servers_file = app.path().app_config_dir()?.join("servers.json");
             app.manage(ServerStore::new(servers_file));
+            app.manage(BoardHttp::new()?);
             app.manage(tab_session::start(app.handle()));
             user_notifications::install(app.handle());
             opened_url::handle_early_links(app.handle());
@@ -86,6 +95,8 @@ fn main() {
             commands::tabs_snapshot,
             commands::select_tab,
             commands::close_tab,
+            commands::board_call,
+            commands::board_state,
         ])
         .build(tauri::generate_context!())
         .expect("the app failed to start");

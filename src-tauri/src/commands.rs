@@ -1,13 +1,19 @@
+use serde::Serialize;
 use tauri::{AppHandle, State, Webview};
 use uuid::Uuid;
 
+use crate::board_api::{self, BoardCallError, CallKind};
+use crate::board_events::Relays;
 use crate::board_window;
 use crate::connection;
 use crate::diagnostics;
 use crate::error::ClientError;
+use crate::handshake::{self, BoardState};
 use crate::opened_url::{OpenFailure, OpenFailures};
 use crate::server_url::check_server_url;
+use crate::session_store;
 use crate::store::{Server, ServerStore};
+use crate::tab_kind::TabKind;
 use crate::tab_session::{self, TabSessions};
 use crate::tab_state;
 use crate::tabs::{TabSession, TabsView, HOME};
@@ -40,9 +46,23 @@ pub fn remove_server(
         eprintln!("server {id}: saved tabs could not be deleted: {error:?}");
     }
     tauri::async_runtime::spawn(async move {
+        delete_session(&app, id).await;
         webview_store::delete_with_retry(&app, id, Some(name)).await;
     });
     closed
+}
+
+async fn delete_session(app: &AppHandle, id: Uuid) {
+    let failure =
+        match tauri::async_runtime::spawn_blocking(move || session_store::delete(id)).await {
+            Ok(Ok(())) => return,
+            Ok(Err(error)) => error.to_string(),
+            Err(error) => error.to_string(),
+        };
+    diagnostics::record(
+        app,
+        &format!("server {id}: session could not be deleted from the keychain: {failure}"),
+    );
 }
 
 #[tauri::command]
@@ -155,6 +175,60 @@ pub fn close_tab(app: AppHandle, webview: Webview, tab: u64) -> Result<(), Clien
     tab_session::apply(&app, server, |session: &mut TabSession| session.close(tab))
 }
 
+pub fn server_of_native(label: &str) -> Option<Uuid> {
+    let rest = label.strip_prefix("native-")?;
+    let id = Uuid::parse_str(rest.get(..36)?).ok()?;
+    let tab = match rest.get(36..)?.strip_prefix('-')? {
+        "home" => HOME,
+        number => number.parse::<u64>().ok().filter(|tab| *tab > 0)?,
+    };
+    (board_window::tab_label(id, tab, TabKind::Native) == label).then_some(id)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BoardStateView {
+    pub state: BoardState,
+    pub server_name: String,
+    pub events_up: bool,
+}
+
+fn native_server(webview: &Webview, store: &State<'_, ServerStore>) -> Result<Server, ClientError> {
+    let id = server_of_native(webview.label()).ok_or(ClientError::NotFound)?;
+    store.find(id)
+}
+
+#[tauri::command]
+pub async fn board_call(
+    app: AppHandle,
+    webview: Webview,
+    store: State<'_, ServerStore>,
+    kind: CallKind,
+    path: String,
+    input: Option<serde_json::Value>,
+) -> Result<serde_json::Value, BoardCallError> {
+    let server = native_server(&webview, &store)?;
+    let path = board_api::checked_path(&path).ok_or(ClientError::NotFound)?;
+    Ok(board_api::call(&app, &server, kind, path, input).await?)
+}
+
+#[tauri::command]
+pub async fn board_state(
+    app: AppHandle,
+    webview: Webview,
+    store: State<'_, ServerStore>,
+    relays: State<'_, Relays>,
+) -> Result<BoardStateView, BoardCallError> {
+    let server = native_server(&webview, &store)?;
+    let handshake = handshake::run(&app, &server).await;
+    tab_session::apply(&app, server.id, |session| session.set_handshake(&handshake))?;
+    Ok(BoardStateView {
+        state: handshake.state,
+        server_name: server.name,
+        events_up: relays.is_up(server.id),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -177,6 +251,32 @@ mod tests {
 
         for (label, expected) in cases {
             assert_eq!(server_of_tabbar(&label), expected.flatten(), "{label}");
+        }
+    }
+
+    #[test]
+    fn accepts_only_the_label_of_a_native_tab() {
+        let id = "0b0c3c1e-5a64-4a41-8f1a-6a0a2d2a9b11";
+        let cases = [
+            (format!("native-{id}-home"), true),
+            (format!("native-{id}-3"), true),
+            (format!("native-{id}"), false),
+            (format!("native-{id}-"), false),
+            (format!("native-{id}-0"), false),
+            (format!("native-{id}-0x3"), false),
+            (format!("native-{id}-home-1"), false),
+            (format!("native-{}-home", id.to_uppercase()), false),
+            (format!("native-{}-home", id.replace('-', "")), false),
+            (format!("board-{id}-home"), false),
+            (format!("tabbar-{id}"), false),
+            (format!("server-{id}"), false),
+            ("native-".to_owned(), false),
+            ("main".to_owned(), false),
+        ];
+
+        for (label, accepted) in cases {
+            let expected = accepted.then(|| Uuid::parse_str(id).unwrap());
+            assert_eq!(server_of_native(&label), expected, "{label}");
         }
     }
 
