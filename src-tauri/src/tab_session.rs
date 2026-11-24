@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use tauri::{AppHandle, Emitter, EventTarget, Manager};
+use tauri::{AppHandle, Emitter, EventTarget, Manager, Webview};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use uuid::Uuid;
 
@@ -9,6 +9,7 @@ use crate::board_window;
 use crate::error::ClientError;
 use crate::health::Banner;
 use crate::store::ServerStore;
+use crate::tab_kind::TabKind;
 use crate::tab_state::{self, SavedTabs};
 use crate::tabs::{Effect, TabSession, TabsView};
 use crate::zoom::Zoom;
@@ -20,6 +21,7 @@ struct Batch {
     effects: Vec<Effect>,
     view: TabsView,
     saved: SavedTabs,
+    kinds: Vec<(u64, TabKind)>,
 }
 
 pub struct TabSessions {
@@ -54,6 +56,10 @@ impl TabSessions {
 
     pub fn zoom(&self, server: Uuid) -> Option<Zoom> {
         self.sessions().get(&server).map(TabSession::zoom)
+    }
+
+    pub fn home_kind(&self, server: Uuid) -> Option<TabKind> {
+        self.sessions().get(&server).map(TabSession::home_kind)
     }
 
     pub fn banner(&self, server: Uuid) -> Option<Banner> {
@@ -104,11 +110,13 @@ pub fn apply(
 
     let view = session.view();
     let saved = session.saved();
+    let kinds = session.tab_kinds();
     let queued = sessions.queue.send(Batch {
         server,
         effects,
         view,
         saved,
+        kinds,
     });
     if queued.is_err() {
         eprintln!("server {server}: tab effects could not be queued");
@@ -122,31 +130,35 @@ fn perform(app: &AppHandle, batch: Batch) {
         effects,
         view,
         saved,
+        kinds,
     } = batch;
 
     for effect in effects {
         match effect {
-            Effect::Load(tab, path) => {
-                if let Err(error) = load(app, server, tab, &path) {
+            Effect::Load(tab, path, kind) => {
+                if let Err(error) = load(app, server, tab, &path, kind) {
                     eprintln!("server {server}: tab {tab} could not be loaded: {error:?}");
                 }
             }
+            Effect::Rebuild(tab, path, kind) => {
+                rebuild(app, server, tab, &path, kind, view.selected);
+            }
             Effect::Show(tab) => {
-                if let Some(webview) = app.get_webview(&board_window::tab_label(server, tab)) {
+                for webview in webviews_of(app, server, tab, &kinds) {
                     if let Err(error) = webview.show().and_then(|()| webview.set_focus()) {
                         eprintln!("server {server}: tab {tab} could not be shown: {error}");
                     }
                 }
             }
             Effect::Hide(tab) => {
-                if let Some(webview) = app.get_webview(&board_window::tab_label(server, tab)) {
+                for webview in webviews_of(app, server, tab, &kinds) {
                     if let Err(error) = webview.hide() {
                         eprintln!("server {server}: tab {tab} could not be hidden: {error}");
                     }
                 }
             }
             Effect::Destroy(tab) => {
-                if let Some(webview) = app.get_webview(&board_window::tab_label(server, tab)) {
+                for webview in webviews_of(app, server, tab, &kinds) {
                     if let Err(error) = webview.close() {
                         eprintln!("server {server}: tab {tab} could not be closed: {error}");
                     }
@@ -172,12 +184,66 @@ fn perform(app: &AppHandle, batch: Batch) {
     }
 }
 
-fn load(app: &AppHandle, server_id: Uuid, tab: u64, path: &str) -> Result<(), ClientError> {
+fn webviews_of(app: &AppHandle, server: Uuid, tab: u64, kinds: &[(u64, TabKind)]) -> Vec<Webview> {
+    let labels = match kinds.iter().find(|(id, _)| *id == tab) {
+        Some((_, kind)) => vec![board_window::tab_label(server, tab, *kind)],
+        None => vec![
+            board_window::tab_label(server, tab, TabKind::Board),
+            board_window::tab_label(server, tab, TabKind::Native),
+        ],
+    };
+    labels
+        .iter()
+        .filter_map(|label| app.get_webview(label))
+        .collect()
+}
+
+fn load(
+    app: &AppHandle,
+    server_id: Uuid,
+    tab: u64,
+    path: &str,
+    kind: TabKind,
+) -> Result<(), ClientError> {
     let Some(window) = app.get_window(&board_window::window_label(server_id)) else {
         return Ok(());
     };
     let server = app.state::<ServerStore>().find(server_id)?;
-    let target =
-        crate::sentinel::same_origin_url(&server.url, path).ok_or(ClientError::NotFound)?;
-    board_window::add_board_webview(app, &window, server_id, &server.url, tab, target)
+    match kind {
+        TabKind::Board => {
+            let target =
+                crate::sentinel::same_origin_url(&server.url, path).ok_or(ClientError::NotFound)?;
+            board_window::add_board_webview(app, &window, server_id, &server.url, tab, target)
+        }
+        TabKind::Native => board_window::add_native_webview(app, &window, &server, tab, path),
+    }
+}
+
+fn rebuild(app: &AppHandle, server: Uuid, tab: u64, path: &str, kind: TabKind, selected: u64) {
+    let replaced = match kind {
+        TabKind::Board => TabKind::Native,
+        TabKind::Native => TabKind::Board,
+    };
+    if let Some(webview) = app.get_webview(&board_window::tab_label(server, tab, replaced)) {
+        if let Err(error) = webview.close() {
+            eprintln!("server {server}: tab {tab} could not be closed: {error}");
+        }
+    }
+
+    if let Err(error) = load(app, server, tab, path, kind) {
+        eprintln!("server {server}: tab {tab} could not be rebuilt: {error:?}");
+        return;
+    }
+
+    let Some(webview) = app.get_webview(&board_window::tab_label(server, tab, kind)) else {
+        return;
+    };
+    let outcome = if selected == tab {
+        webview.set_focus()
+    } else {
+        webview.hide()
+    };
+    if let Err(error) = outcome {
+        eprintln!("server {server}: tab {tab} could not be settled after a rebuild: {error}");
+    }
 }

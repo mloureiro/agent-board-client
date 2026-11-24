@@ -119,5 +119,6 @@ mod tests {
         assert_eq!(slot_of("tabbar-0b0c"), Slot::TabBar);
         assert_eq!(slot_of("board-0b0c-home"), Slot::Content);
         assert_eq!(slot_of("board-0b0c-3"), Slot::Content);
+        assert_eq!(slot_of("native-0b0c-3"), Slot::Content);
     }
 }
