@@ -37,20 +37,36 @@
     </svg>
 
     <header class="app-head">
-      <h1>Servers <small id="count"></small></h1>
+      <div class="app-bar">
+        <h1>Servers <small id="count"></small></h1>
+        <button type="button" class="primary" id="add-trigger" data-key="add-trigger">
+          Add server
+        </button>
+      </div>
       <ul id="panel" class="panel" hidden></ul>
     </header>
 
     <main>
       <ul id="servers" class="servers"></ul>
-      <p id="empty" class="empty" hidden>No servers yet. Add the address of a board below.</p>
+      <p id="empty" class="empty" hidden>
+        No servers yet. Use Add server to add the address of a board.
+      </p>
+    </main>
 
-      <form id="add-server" class="add-server" novalidate>
-        <h2>Add a server</h2>
+    <dialog id="add-sheet" aria-labelledby="add-title">
+      <form class="sheet" novalidate>
+        <h2 id="add-title">Add a server</h2>
         <label>
           <span>Name</span>
-          <input id="server-name" name="name" type="text" autocomplete="off" required />
+          <input
+            id="server-name"
+            name="name"
+            type="text"
+            autocomplete="off"
+            aria-describedby="name-message"
+          />
         </label>
+        <p id="name-message" class="field-message"></p>
         <label>
           <span>Address</span>
           <input
@@ -62,12 +78,18 @@
             autocapitalize="off"
             spellcheck="false"
             placeholder="https://board.example.com"
-            required
+            aria-describedby="url-message"
           />
         </label>
-        <button type="submit" class="primary">Add server</button>
+        <p id="url-message" class="field-message"></p>
+        <p id="sheet-status" class="sheet-status" role="status"></p>
+        <div class="sheet-actions">
+          <button type="button" class="quiet" id="sheet-cancel">Cancel</button>
+          <button type="button" id="sheet-test">Test</button>
+          <button type="submit" class="primary" id="sheet-add">Add server</button>
+        </div>
       </form>
-    </main>
+    </dialog>
 
     <p id="live" class="sr-only" aria-live="polite"></p>
     <script type="module" src="/src/main.ts"></script>

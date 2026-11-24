@@ -1,5 +1,4 @@
 import {
-  addServer,
   failedStoreDeletions,
   listServers,
   onOpenFailed,
@@ -13,6 +12,7 @@ import {
   takeOpenFailure,
   testServer,
 } from './backend';
+import { createAddSheet } from './add-sheet';
 import type { FailedDeletion, Server } from './backend';
 import { focusedKey, restoreFocus, revealNearest } from './dom';
 import {
@@ -23,14 +23,12 @@ import {
   storeDeletionMessage,
   subjectMessage,
   testResultMessage,
-  urlMessage,
 } from './messages';
 import { clearFor, flaggedServers } from './notices';
 import type { Notice, NoticeAction, NoticeCause } from './notices';
 import { renderPanel } from './panel';
 import { findRow, markFlagged, renderServerList } from './server-list';
 import type { Editing, ListHandlers, ListView } from './server-list';
-import { checkServerUrl } from './server-url';
 import './styles.css';
 
 function element<T extends HTMLElement>(id: string, type: new () => T): T {
@@ -44,9 +42,8 @@ const count = element('count', HTMLElement);
 const live = element('live', HTMLParagraphElement);
 const list = element('servers', HTMLUListElement);
 const emptyState = element('empty', HTMLParagraphElement);
-const form = element('add-server', HTMLFormElement);
-const nameInput = element('server-name', HTMLInputElement);
-const urlInput = element('server-url', HTMLInputElement);
+const addTrigger = element('add-trigger', HTMLButtonElement);
+const addDialog = element('add-sheet', HTMLDialogElement);
 
 let notices: readonly Notice[] = [];
 let noticeCounter = 0;
@@ -278,18 +275,20 @@ async function saveRename(): Promise<void> {
       editing.saving = false;
       editing.invalid = true;
       notify('rename', server.id, 'error', subjectMessage(server.name, failureMessage(failure)));
-      renderList({ focus: 'rename-input', reuseEditor: false });
+      renderList(view.editing === editing ? { focus: 'rename-input', reuseEditor: false } : {});
       return;
     }
   }
 
-  view.editing = null;
-  stale = false;
+  if (view.editing === editing) {
+    view.editing = null;
+    stale = false;
+  }
   await loadList().catch((failure: unknown) => {
     reportStatus('rename', failure);
     renderList();
   });
-  restoreFocus(list, `menu-${server.id}`);
+  if (view.editing === null) restoreFocus(list, `menu-${server.id}`);
   if (savedWithWarning !== null) {
     notify('rename', server.id, 'error', subjectMessage(editing.value.trim(), savedWithWarning));
   }
@@ -314,7 +313,7 @@ async function removeAndReload(server: Server): Promise<void> {
     notify('remove', null, 'error', removeFailureMessage(server.name, removal.failure));
   }
   const next = view.servers[index] ?? view.servers[index - 1];
-  if (next === undefined) nameInput.focus();
+  if (next === undefined) addTrigger.focus();
   else restoreFocus(list, `open-${next.id}`);
 }
 
@@ -402,27 +401,24 @@ function releasePointer(): void {
 document.addEventListener('pointerup', releasePointer);
 document.addEventListener('pointercancel', releasePointer);
 
-async function submit(): Promise<void> {
-  endEdit();
-  clear('add');
-  const checked = checkServerUrl(urlInput.value);
-  if (!checked.ok) {
-    notify('add', null, 'error', urlMessage(checked.error));
-    urlInput.focus();
-    return;
+const addSheet = createAddSheet(addDialog, {
+  trigger: addTrigger,
+  onAdded: async (added) => {
+    try {
+      await loadList();
+      revealNearest(findRow(list, added.id));
+    } catch (failure) {
+      reportStatus('startup', failure);
+    }
+  },
+});
+
+addTrigger.addEventListener('click', () => {
+  if (view.editing !== null) {
+    endEdit();
+    renderList();
   }
-
-  await addServer(nameInput.value, checked.url);
-  form.reset();
-  await loadList();
-  nameInput.focus();
-}
-
-form.addEventListener('submit', (event) => {
-  event.preventDefault();
-  submit().catch((failure: unknown) => {
-    reportStatus('add', failure);
-  });
+  addSheet.open();
 });
 
 function reportStartup(failure: unknown): void {

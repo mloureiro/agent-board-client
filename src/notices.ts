@@ -1,5 +1,5 @@
 export type NoticeCause =
-  'test' | 'open' | 'openedLink' | 'remove' | 'rename' | 'retry' | 'add' | 'startup';
+  'test' | 'open' | 'openedLink' | 'remove' | 'rename' | 'retry' | 'startup';
 
 export interface Notice {
   readonly id: number;
@@ -9,15 +9,9 @@ export interface Notice {
   readonly text: string;
 }
 
-export type NoticeAction = 'test' | 'open' | 'remove' | 'rename' | 'cancelRename' | 'retry' | 'add';
+export type NoticeAction = 'test' | 'open' | 'remove' | 'rename' | 'cancelRename' | 'retry';
 
-const STATUS_CAUSES: ReadonlySet<NoticeCause> = new Set([
-  'remove',
-  'rename',
-  'retry',
-  'add',
-  'startup',
-]);
+const STATUS_CAUSES: ReadonlySet<NoticeCause> = new Set(['remove', 'rename', 'retry', 'startup']);
 
 export function clearFor(notices: readonly Notice[], action: NoticeAction): Notice[] {
   if (action === 'test' || action === 'open') return [];
