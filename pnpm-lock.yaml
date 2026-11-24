@@ -9,8 +9,8 @@ importers:
   .:
     dependencies:
       '@agent-board/shared':
-        specifier: github:mloureiro/agent-board#60866432a662c69b83c07c84b3864cbe2a751b83&path:packages/shared
-        version: https://codeload.github.com/mloureiro/agent-board/tar.gz/60866432a662c69b83c07c84b3864cbe2a751b83#path:packages/shared
+        specifier: github:mloureiro/agent-board#4b85a7878bd2cb531c7dc896367224b51e53aa44&path:packages/shared
+        version: https://codeload.github.com/mloureiro/agent-board/tar.gz/4b85a7878bd2cb531c7dc896367224b51e53aa44#path:packages/shared
       '@mantine/core':
         specifier: ^9.7.5
         version: 9.8.2(@mantine/hooks@9.8.2(react@19.3.1))(@types/react@19.3.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -111,8 +111,8 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@agent-board/shared@https://codeload.github.com/mloureiro/agent-board/tar.gz/60866432a662c69b83c07c84b3864cbe2a751b83#path:packages/shared':
-    resolution: {gitHosted: true, integrity: sha512-Y/TPxmaZeoHJDnGmNGYh7ipnztXdVlO9V/pGhseK3LvEsxgXqH20sqlxqKDrT26lNb6GCryfD0bBklc0f6CEAA==, path: packages/shared, tarball: https://codeload.github.com/mloureiro/agent-board/tar.gz/60866432a662c69b83c07c84b3864cbe2a751b83}
+  '@agent-board/shared@https://codeload.github.com/mloureiro/agent-board/tar.gz/4b85a7878bd2cb531c7dc896367224b51e53aa44#path:packages/shared':
+    resolution: {gitHosted: true, integrity: sha512-Bq4Bt2GbmWTuIrZg8CuE79csy7v8fHGjpqLjVD5w2Q2M/6UNlzFHRxPaSPfYzTIXashPDu7PzMulOgpKAZn2JQ==, path: packages/shared, tarball: https://codeload.github.com/mloureiro/agent-board/tar.gz/4b85a7878bd2cb531c7dc896367224b51e53aa44}
     version: 0.1.0
 
   '@babel/code-frame@7.29.7':
@@ -1523,7 +1523,7 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@agent-board/shared@https://codeload.github.com/mloureiro/agent-board/tar.gz/60866432a662c69b83c07c84b3864cbe2a751b83#path:packages/shared': {}
+  '@agent-board/shared@https://codeload.github.com/mloureiro/agent-board/tar.gz/4b85a7878bd2cb531c7dc896367224b51e53aa44#path:packages/shared': {}
 
   '@babel/code-frame@7.29.7':
     dependencies:

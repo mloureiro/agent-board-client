@@ -16,10 +16,11 @@ export interface BoardStateView {
   readonly state: BoardStateName;
   readonly serverName: string;
   readonly eventsUp: boolean;
+  readonly signedIn: boolean;
 }
 
 export const SLOW_POLL_MS = 30_000;
-const BOARD_STATE_KEY = ['board-state'] as const;
+export const BOARD_STATE_KEY = ['board-state'] as const;
 
 export function refetchIntervalFor(eventsUp: boolean): number | false {
   return eventsUp ? false : SLOW_POLL_MS;
@@ -27,11 +28,12 @@ export function refetchIntervalFor(eventsUp: boolean): number | false {
 
 export function useBoardState(): {
   view: BoardStateView | undefined;
+  isError: boolean;
   refetchInterval: number | false;
 } {
   const queryClient = useQueryClient();
   const [listening, setListening] = useState(false);
-  const { data: view } = useQuery({
+  const { data: view, isError } = useQuery({
     queryKey: BOARD_STATE_KEY,
     queryFn: () => invoke<BoardStateView>('board_state'),
     enabled: listening,
@@ -83,5 +85,9 @@ export function useBoardState(): {
     };
   }, [queryClient]);
 
-  return { view, refetchInterval: refetchIntervalFor(pushedUp ?? view?.eventsUp ?? false) };
+  return {
+    view,
+    isError,
+    refetchInterval: refetchIntervalFor(pushedUp ?? view?.eventsUp ?? false),
+  };
 }

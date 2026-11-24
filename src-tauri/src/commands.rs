@@ -1,5 +1,5 @@
 use serde::Serialize;
-use tauri::{AppHandle, State, Webview};
+use tauri::{AppHandle, Manager, State, Webview};
 use uuid::Uuid;
 
 use crate::board_api::{self, BoardCallError, CallKind};
@@ -9,9 +9,11 @@ use crate::connection;
 use crate::diagnostics;
 use crate::error::ClientError;
 use crate::handshake::{self, BoardState};
+use crate::link_route::server_page;
 use crate::opened_url::{OpenFailure, OpenFailures};
 use crate::server_url::check_server_url;
 use crate::session_store;
+use crate::sign_in::{self, is_code, PollStatus, SignInFlows, SignInStarted, SignOutStatus};
 use crate::store::{Server, ServerStore};
 use crate::tab_kind::TabKind;
 use crate::tab_session::{self, TabSessions};
@@ -41,6 +43,7 @@ pub fn remove_server(
 ) -> Result<(), ClientError> {
     let name = store.find(id)?.name;
     store.remove(id)?;
+    app.state::<SignInFlows>().forget(id);
     let closed = board_window::close(&app, id);
     if let Err(error) = tab_state::delete(&app, id) {
         eprintln!("server {id}: saved tabs could not be deleted: {error:?}");
@@ -191,6 +194,7 @@ pub struct BoardStateView {
     pub state: BoardState,
     pub server_name: String,
     pub events_up: bool,
+    pub signed_in: bool,
 }
 
 fn native_server(webview: &Webview, store: &State<'_, ServerStore>) -> Result<Server, ClientError> {
@@ -222,11 +226,75 @@ pub async fn board_state(
     let server = native_server(&webview, &store)?;
     let handshake = handshake::rerun(&app, &server).await;
     tab_session::apply(&app, server.id, |session| session.set_handshake(&handshake))?;
+    let signed_in = handshake.state == BoardState::Ready
+        && matches!(board_api::read_session(&app, server.id).await, Ok(Some(_)));
     Ok(BoardStateView {
         state: handshake.state,
         server_name: server.name,
         events_up: relays.is_up(server.id),
+        signed_in,
     })
+}
+
+#[tauri::command]
+pub async fn sign_in_start(
+    app: AppHandle,
+    webview: Webview,
+    store: State<'_, ServerStore>,
+) -> Result<SignInStarted, BoardCallError> {
+    let server = native_server(&webview, &store)?;
+    Ok(sign_in::start(&app, &server).await?)
+}
+
+#[tauri::command]
+pub async fn sign_in_poll(
+    app: AppHandle,
+    webview: Webview,
+    store: State<'_, ServerStore>,
+    code: String,
+) -> Result<PollStatus, BoardCallError> {
+    if !is_code(&code) {
+        return Err(ClientError::NotFound.into());
+    }
+    let server = native_server(&webview, &store)?;
+    Ok(sign_in::poll(&app, &server, &code).await?)
+}
+
+#[tauri::command]
+pub fn sign_in_cancel(
+    app: AppHandle,
+    webview: Webview,
+    store: State<'_, ServerStore>,
+    code: String,
+) -> Result<(), ClientError> {
+    if !is_code(&code) {
+        return Err(ClientError::NotFound);
+    }
+    let server = native_server(&webview, &store)?;
+    sign_in::cancel(&app, server.id, &code);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn sign_out(
+    app: AppHandle,
+    webview: Webview,
+    store: State<'_, ServerStore>,
+) -> Result<SignOutStatus, BoardCallError> {
+    let server = native_server(&webview, &store)?;
+    Ok(sign_in::sign_out(&app, &server).await?)
+}
+
+#[tauri::command]
+pub fn open_in_browser(
+    webview: Webview,
+    store: State<'_, ServerStore>,
+    path: String,
+) -> Result<(), ClientError> {
+    let server = native_server(&webview, &store)?;
+    let page = server_page(&server.url, &path).ok_or(ClientError::NotFound)?;
+    board_window::open_in_system_browser(server.id, &page);
+    Ok(())
 }
 
 #[cfg(test)]

@@ -92,7 +92,7 @@ fn route_new_window(app: &AppHandle, id: Uuid, server_url: &Url, requested: &Url
     }
 }
 
-fn open_in_system_browser(id: Uuid, requested: &Url) {
+pub fn open_in_system_browser(id: Uuid, requested: &Url) {
     let target = requested.to_string();
     std::thread::spawn(move || {
         if let Err(error) = open::that_detached(target) {

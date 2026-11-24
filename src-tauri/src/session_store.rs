@@ -110,6 +110,12 @@ mod backend {
         }
     }
 
+    pub fn set(server: Uuid, value: &str) -> Result<(), StoreError> {
+        entry(server)?
+            .set_password(value)
+            .map_err(|error| StoreError(error.to_string()))
+    }
+
     pub fn remove(server: Uuid) -> Result<(), StoreError> {
         match entry(server)?.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
@@ -126,9 +132,25 @@ mod backend {
         Ok(None)
     }
 
+    // Reading here is Ok(None), so ignoring a write would report a sign-in that never persists.
+    pub fn set(_server: Uuid, _value: &str) -> Result<(), StoreError> {
+        Err(StoreError("this platform has no keychain".to_owned()))
+    }
+
     pub fn remove(_server: Uuid) -> Result<(), StoreError> {
         Ok(())
     }
+}
+
+pub fn stored_value(session: &StoredSession) -> Result<String, ShapeError> {
+    check_token(&session.token)?;
+    serde_json::to_string(session).map_err(|_| ShapeError::NotJson)
+}
+
+pub fn write(server: Uuid, session: &StoredSession) -> Result<(), StoreError> {
+    let value = stored_value(session)
+        .map_err(|_| StoreError("the session is not shaped like a board session".to_owned()))?;
+    backend::set(server, &value)
 }
 
 pub fn read(server: Uuid) -> Result<(Option<StoredSession>, bool), StoreError> {
@@ -247,6 +269,31 @@ mod tests {
 
         for (name, value, expected) in cases {
             assert_eq!(parse_stored(&value), expected, "{name}");
+        }
+    }
+
+    #[test]
+    fn builds_the_value_to_store() {
+        let session = |name, token: &str| StoredSession {
+            name,
+            token: token.to_owned(),
+        };
+        for name in [CookieName::Host, CookieName::Plain] {
+            let value = stored_value(&session(name, TOKEN)).expect("a valid session");
+            assert_eq!(parse_stored(&value), Ok(session(name, TOKEN)));
+        }
+
+        let refused = [
+            ("42 characters", TOKEN[..TOKEN.len() - 1].to_owned()),
+            ("a set-cookie value", format!("{TOKEN}; Path=/")),
+            ("empty", String::new()),
+        ];
+        for (name, token) in refused {
+            assert_eq!(
+                stored_value(&session(CookieName::Plain, &token)),
+                Err(ShapeError::Token),
+                "{name}"
+            );
         }
     }
 

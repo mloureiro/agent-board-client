@@ -21,8 +21,9 @@ draw yet still open the board's own page, which may ask you to sign in and unloc
 - A board page cannot call the client's native commands. Only the server list window can, and the
   tab bar of each server window can call three tab commands (snapshot, select, close) for its own
   window only. The client's own pages (`board.html`) can call a fixed set of commands that act for
-  their own server only: one calls a board procedure, and one reports whether the board supports the
-  client's own pages.
+  their own server only: one calls a board procedure, one reports whether the board supports the
+  client's own pages, and the rest start, check and cancel a sign-in, sign out, and open a page of
+  their own server in the default browser.
 
 macOS 14 or newer is required. Other platforms compile but are untested.
 
@@ -32,6 +33,10 @@ Passkeys do not work inside a server window, because the system webview refuses 
 app. A board that offers "Sign in with your browser" shows a code and a link in the window. The
 link opens in the default browser, where you sign in by any method and approve after checking
 that the code matches. The window then signs in by itself.
+
+The client's own pages sign in the same way: a board with login shows a sign-in page that opens the
+board's sign-in in the default browser, shows a code to compare, and keeps the session in the
+system keychain.
 
 The board must run a version with this hand-off flow. Other sign-in methods keep working in the
 window.

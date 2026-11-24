@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use reqwest::header::{HeaderValue, CONTENT_TYPE, COOKIE};
+use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, COOKIE};
 use reqwest::redirect::Policy;
 use reqwest::{Client, Method, RequestBuilder};
 use serde::{Deserialize, Serialize};
@@ -275,6 +275,34 @@ pub async fn read_capped(
     Ok(body)
 }
 
+pub struct Reply {
+    pub answer: Answer,
+    pub headers: HeaderMap,
+}
+
+pub async fn exchange_reply(
+    client: &Client,
+    base: &Url,
+    kind: CallKind,
+    path: &str,
+    input: Option<&Value>,
+    session: Option<&StoredSession>,
+    cap: usize,
+) -> Result<Reply, BoardFailure> {
+    let builder = request(client, base, kind, path, input, session)?;
+    let response = builder
+        .send()
+        .await
+        .map_err(|error| classify_transport(&error))?;
+    let status = response.status().as_u16();
+    let headers = response.headers().clone();
+    let body = read_capped(response, cap).await?;
+    Ok(Reply {
+        answer: parse_answer(status, &body),
+        headers,
+    })
+}
+
 pub async fn exchange(
     client: &Client,
     base: &Url,
@@ -284,14 +312,9 @@ pub async fn exchange(
     session: Option<&StoredSession>,
     cap: usize,
 ) -> Result<Answer, BoardFailure> {
-    let builder = request(client, base, kind, path, input, session)?;
-    let response = builder
-        .send()
+    exchange_reply(client, base, kind, path, input, session, cap)
         .await
-        .map_err(|error| classify_transport(&error))?;
-    let status = response.status().as_u16();
-    let body = read_capped(response, cap).await?;
-    Ok(parse_answer(status, &body))
+        .map(|reply| reply.answer)
 }
 
 pub async fn perform(
@@ -757,5 +780,43 @@ mod tests {
         );
         assert!(mutation.ends_with("\r\n\r\nnull"), "{mutation}");
         assert!(!mutation.contains("cookie:"), "{mutation}");
+    }
+
+    #[test]
+    fn keeps_every_set_cookie_header_of_a_reply() {
+        let body = r#"{"result":{"data":{"status":"signed-in"}}}"#;
+        let (base, requests) = serve(answer(
+            "200 OK",
+            "Set-Cookie: board-session=one\r\nSet-Cookie: other=two\r\n",
+            body,
+        ));
+        let http = client(Duration::from_secs(5));
+        let input = json!({ "flow": "f" });
+
+        let reply = tauri::async_runtime::block_on(exchange_reply(
+            &http,
+            &base,
+            CallKind::Mutation,
+            "auth.handoff.finish",
+            Some(&input),
+            None,
+            BODY_CAP,
+        ))
+        .unwrap();
+
+        assert_eq!(reply.answer, Answer::Data(json!({ "status": "signed-in" })));
+        let cookies: Vec<&[u8]> = reply
+            .headers
+            .get_all(reqwest::header::SET_COOKIE)
+            .iter()
+            .map(HeaderValue::as_bytes)
+            .collect();
+        assert_eq!(cookies, [&b"board-session=one"[..], &b"other=two"[..]]);
+        let request = requests.recv().unwrap().to_lowercase();
+        assert!(request.contains("x-board-ui-api: 1\r\n"), "{request}");
+        assert!(
+            request.contains("content-type: application/json\r\n"),
+            "{request}"
+        );
     }
 }
