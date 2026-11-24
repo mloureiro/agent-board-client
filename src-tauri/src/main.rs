@@ -19,6 +19,7 @@ mod sentinel;
 mod server_url;
 mod session_store;
 mod shortcuts;
+mod sign_in;
 mod store;
 mod tab_kind;
 mod tab_session;
@@ -37,6 +38,7 @@ use crate::board_api::BoardHttp;
 use crate::board_events::Relays;
 use crate::notify::NotifyLimits;
 use crate::opened_url::{EarlyLinks, OpenFailures};
+use crate::sign_in::SignInFlows;
 use crate::store::ServerStore;
 use crate::webview_store::FailedDeletions;
 
@@ -65,6 +67,7 @@ fn main() {
         .manage(EarlyLinks::default())
         .manage(NotifyLimits::default())
         .manage(Relays::default())
+        .manage(SignInFlows::default())
         .setup(|app| {
             diagnostics::record_panics(app.handle().clone());
             let servers_file = app.path().app_config_dir()?.join("servers.json");
@@ -97,6 +100,11 @@ fn main() {
             commands::close_tab,
             commands::board_call,
             commands::board_state,
+            commands::sign_in_start,
+            commands::sign_in_poll,
+            commands::sign_in_cancel,
+            commands::sign_out,
+            commands::open_in_browser,
         ])
         .build(tauri::generate_context!())
         .expect("the app failed to start");

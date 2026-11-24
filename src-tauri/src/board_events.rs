@@ -15,7 +15,7 @@ use crate::store::ServerStore;
 
 const BOARD_CHANGED: &str = "board-changed";
 const BOARD_EVENTS: &str = "board-events";
-const SIGNED_OUT: &str = "signed-out";
+pub const SIGNED_OUT: &str = "signed-out";
 const MAX_LINE_BYTES: usize = 4 * 1024;
 const FIRST_BACKOFF: Duration = Duration::from_secs(1);
 const LONGEST_BACKOFF: Duration = Duration::from_secs(30);
@@ -146,7 +146,7 @@ struct EventsUp {
     up: bool,
 }
 
-fn emit_to_native<S: Serialize + Clone>(app: &AppHandle, server: Uuid, name: &str, payload: S) {
+pub fn emit_to_native<S: Serialize + Clone>(app: &AppHandle, server: Uuid, name: &str, payload: S) {
     for label in app.webviews().into_keys() {
         if server_of_native(&label) != Some(server) {
             continue;

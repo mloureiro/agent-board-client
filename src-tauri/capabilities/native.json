@@ -7,6 +7,11 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "allow-board-call",
-    "allow-board-state"
+    "allow-board-state",
+    "allow-sign-in-start",
+    "allow-sign-in-poll",
+    "allow-sign-in-cancel",
+    "allow-sign-out",
+    "allow-open-in-browser"
   ]
 }

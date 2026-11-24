@@ -1,1 +1,1 @@
-{ "uiApiVersion": 1, "minUiServer": 1, "eventsFeature": "events", "handoffFeature": "auth.handoff" }
+{ "uiApiVersion": 1, "minUiServer": 1, "eventsFeature": "events", "handoffFeature": "handoff" }
