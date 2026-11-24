@@ -32,6 +32,8 @@ interface FakeWindow {
   ) => void;
   EventTarget: typeof EventTarget;
   setTimeout: (callback: () => void, delay: number) => unknown;
+  fetch?: (...args: unknown[]) => Promise<unknown>;
+  Date: { now: () => number };
   ServiceWorkerRegistration?: { prototype: { showNotification?: unknown } };
   Notification?: {
     permission: string;
@@ -48,13 +50,19 @@ interface FakeKeyEvent {
   preventDefault?: () => void;
 }
 
-function setup(role = 'home', withRegistration = false) {
+function setup(
+  role = 'home',
+  withRegistration = false,
+  fetch?: (...args: unknown[]) => Promise<unknown>,
+) {
+  const clock = { now: 0 };
   const original = { pushState: vi.fn(), replaceState: vi.fn() };
   const assigned: string[] = [];
   const listeners: Record<string, ((event: FakeKeyEvent) => void)[]> = {};
   const win: FakeWindow = {
     URL,
     EventTarget,
+    Date: { now: () => clock.now },
     setTimeout: (callback, delay) => setTimeout(callback, delay),
     addEventListener: (type, listener) => {
       (listeners[type] ??= []).push(listener);
@@ -72,6 +80,9 @@ function setup(role = 'home', withRegistration = false) {
       },
     },
   };
+  if (fetch) {
+    win.fetch = fetch;
+  }
   if (withRegistration) {
     win.ServiceWorkerRegistration = { prototype: {} };
   }
@@ -81,7 +92,7 @@ function setup(role = 'home', withRegistration = false) {
       listener(event);
     });
   };
-  return { win, original, assigned, fire, flush: () => vi.runAllTimers() };
+  return { win, original, assigned, fire, clock, flush: () => vi.runAllTimers() };
 }
 
 describe('tab-routing home role', () => {
@@ -391,5 +402,273 @@ describe.each(['home', 'tab'])('tab-routing %s role keyboard', (role) => {
 
     expect(assigned).toEqual([]);
     expect(preventDefault).not.toHaveBeenCalled();
+  });
+});
+
+describe('tab-routing server health', () => {
+  interface Reply {
+    status?: number;
+    redirected?: boolean;
+    type?: string;
+    contentType?: string;
+  }
+
+  const answer = ({
+    status = 200,
+    redirected = false,
+    type = 'basic',
+    contentType = 'application/json',
+  }: Reply = {}) => ({
+    status,
+    redirected,
+    type,
+    headers: { get: (name: string) => (name === 'content-type' ? contentType : null) },
+  });
+
+  type Fetch = (input: unknown, init?: { redirect?: string }) => Promise<unknown>;
+
+  function board(script: Fetch, role = 'home') {
+    const calls: { input: unknown; init?: { redirect?: string } }[] = [];
+    const context = setup(role, false, (input, init) => {
+      calls.push({ input, init: init as { redirect?: string } | undefined });
+      return script(input, init as { redirect?: string } | undefined);
+    });
+    const request = async (input: unknown) => {
+      const promise = (context.win.fetch as Fetch)(input);
+      await promise.catch(() => undefined);
+      await vi.advanceTimersByTimeAsync(0);
+      return promise;
+    };
+    const sent = () => context.assigned.filter((href) => href.includes(':health'));
+    return { ...context, calls, request, sent };
+  }
+
+  const states = (hrefs: string[]) => hrefs.map((href) => new URL(href).searchParams.get('state'));
+
+  describe('which requests are observed', () => {
+    it.each([
+      ['a relative trpc path', '/trpc/tasks.list?batch=1', true],
+      ['an absolute same-origin trpc url', `${ORIGIN}/trpc/x`, true],
+      ['a Request object', new Request(`${ORIGIN}/trpc/x`), true],
+      ['the bare trpc path', '/trpc', true],
+      ['another api path', '/api/x', false],
+      ['a path that only starts with the word', '/trpcx', false],
+      ['a cross-origin trpc url', 'https://other.example.com/trpc/x', false],
+    ])('%s', async (_name, input, observed) => {
+      const { request, sent } = board(() => Promise.resolve(answer()));
+
+      await request(input);
+
+      expect(states(sent())).toEqual(observed ? ['ok'] : []);
+    });
+  });
+
+  describe('what a response means', () => {
+    it.each([
+      ['401', { status: 401 }, 'session'],
+      ['a redirect', { redirected: true }, 'session'],
+      ['an html page', { contentType: 'text/html; charset=utf-8' }, 'session'],
+      ['200', { status: 200 }, 'ok'],
+      ['404', { status: 404 }, 'ok'],
+      ['500', { status: 500 }, 'ok'],
+    ] as [string, Reply, string][])('%s', async (_name, reply, expected) => {
+      const { request, sent } = board(() => Promise.resolve(answer(reply)));
+
+      await request('/trpc/x');
+
+      expect(states(sent())).toEqual([expected]);
+    });
+
+    it.each([502, 503, 504])('%i counts as a failure that turns into down', async (status) => {
+      const { request, sent, clock } = board(() => Promise.resolve(answer({ status })));
+
+      await request('/trpc/x');
+      clock.now = 1000;
+      await request('/trpc/x');
+      expect(sent()).toEqual([]);
+      clock.now = 8000;
+      await request('/trpc/x');
+
+      expect(states(sent())).toEqual(['down']);
+    });
+  });
+
+  describe('the probe after a rejection', () => {
+    it.each([
+      ['rejects', () => Promise.reject(new TypeError('offline')), 'down'],
+      [
+        'opaqueredirect',
+        () => Promise.resolve(answer({ status: 0, type: 'opaqueredirect' })),
+        'session',
+      ],
+      ['401', () => Promise.resolve(answer({ status: 401 })), 'session'],
+      ['502', () => Promise.resolve(answer({ status: 502 })), 'down'],
+      ['200', () => Promise.resolve(answer()), 'down'],
+    ] as [string, () => Promise<unknown>, string][])(
+      'a probe that %s ends as %s',
+      async (_name, probe, expected) => {
+        const { request, sent, clock } = board((input) =>
+          input === '/trpc/me' ? probe() : Promise.reject(new TypeError('load failed')),
+        );
+
+        await request('/trpc/x').catch(() => undefined);
+        clock.now = 1000;
+        await request('/trpc/x').catch(() => undefined);
+        clock.now = 8000;
+        await request('/trpc/x').catch(() => undefined);
+
+        expect(states(sent())).toEqual(expected === 'down' ? ['down'] : ['session']);
+      },
+    );
+
+    it('goes to /trpc/me with redirect manual and is not observed itself', async () => {
+      const { request, calls, sent } = board((input) =>
+        input === '/trpc/me'
+          ? Promise.resolve(answer({ status: 401 }))
+          : Promise.reject(new TypeError('load failed')),
+      );
+
+      await request('/trpc/x').catch(() => undefined);
+
+      const probes = calls.filter((call) => call.input === '/trpc/me');
+      expect(probes).toHaveLength(1);
+      expect(probes[0]?.init).toMatchObject({ redirect: 'manual', cache: 'no-store' });
+      expect(states(sent())).toEqual(['session']);
+    });
+
+    it('starts no probe for an AbortError', async () => {
+      const { request, calls, sent } = board(() =>
+        Promise.reject(new DOMException('aborted', 'AbortError')),
+      );
+
+      await request('/trpc/x').catch(() => undefined);
+
+      expect(calls).toHaveLength(1);
+      expect(sent()).toEqual([]);
+    });
+
+    it('starts no second probe while one is in flight', async () => {
+      let release: (value: unknown) => void = () => undefined;
+      const { win, calls } = board((input) =>
+        input === '/trpc/me'
+          ? new Promise((resolve) => {
+              release = resolve;
+            })
+          : Promise.reject(new TypeError('load failed')),
+      );
+
+      await Promise.allSettled([(win.fetch as Fetch)('/trpc/a'), (win.fetch as Fetch)('/trpc/b')]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(calls.filter((call) => call.input === '/trpc/me')).toHaveLength(1);
+      release(answer());
+    });
+  });
+
+  describe('the failure threshold', () => {
+    const fail = () => Promise.resolve(answer({ status: 503 }));
+
+    it('reports down once, after a third failure 8 s into the run', async () => {
+      const { request, sent, clock } = board(fail);
+
+      await request('/trpc/x');
+      clock.now = 1000;
+      await request('/trpc/x');
+      expect(sent()).toEqual([]);
+
+      clock.now = 8000;
+      await request('/trpc/x');
+      clock.now = 13000;
+      await request('/trpc/x');
+
+      expect(states(sent())).toEqual(['down']);
+    });
+
+    it('reports ok after a success that follows down', async () => {
+      let healthy = false;
+      const { request, sent, clock } = board(() =>
+        Promise.resolve(answer({ status: healthy ? 200 : 503 })),
+      );
+      await request('/trpc/x');
+      clock.now = 9000;
+      await request('/trpc/x');
+      healthy = true;
+      clock.now = 10000;
+      await request('/trpc/x');
+      await request('/trpc/x');
+
+      expect(states(sent())).toEqual(['down', 'ok']);
+    });
+
+    it('restarts the run after a success', async () => {
+      let healthy = false;
+      const { request, sent, clock } = board(() =>
+        Promise.resolve(answer({ status: healthy ? 200 : 503 })),
+      );
+      await request('/trpc/x');
+      healthy = true;
+      clock.now = 4000;
+      await request('/trpc/x');
+      healthy = false;
+      clock.now = 9000;
+      await request('/trpc/x');
+      clock.now = 10000;
+      await request('/trpc/x');
+
+      expect(states(sent())).toEqual(['ok']);
+    });
+
+    it('reports session at once, then ok again once signed in', async () => {
+      let status = 401;
+      const { request, sent } = board(() => Promise.resolve(answer({ status })));
+
+      await request('/trpc/x');
+      status = 200;
+      await request('/trpc/x');
+
+      expect(states(sent())).toEqual(['session', 'ok']);
+    });
+  });
+
+  it('sends one ok after the first success and nothing for the next', async () => {
+    const { request, sent } = board(() => Promise.resolve(answer()));
+
+    await request('/trpc/x');
+    await request('/trpc/x');
+
+    expect(states(sent())).toEqual(['ok']);
+  });
+
+  it.each(['home', 'tab'])('also observes in the %s role', async (role) => {
+    const { request, sent } = board(() => Promise.resolve(answer()), role);
+
+    await request('/trpc/x');
+
+    expect(states(sent())).toEqual(['ok']);
+  });
+
+  describe('transparency', () => {
+    it('hands the board the very promise the original returned', () => {
+      const original = Promise.resolve(answer());
+      const { win } = board(() => original);
+
+      expect((win.fetch as Fetch)('/trpc/x')).toBe(original);
+    });
+
+    it('still rejects for the board with the same error', async () => {
+      const failure = new TypeError('load failed');
+      const { win } = board((input) =>
+        input === '/trpc/me' ? Promise.reject(new TypeError('probe')) : Promise.reject(failure),
+      );
+
+      await expect((win.fetch as Fetch)('/trpc/x')).rejects.toBe(failure);
+    });
+
+    it('leaves an unobserved request alone', () => {
+      const original = Promise.resolve(answer());
+      const { win, calls } = board(() => original);
+
+      expect((win.fetch as Fetch)('/api/x')).toBe(original);
+      expect(calls).toHaveLength(1);
+    });
   });
 });

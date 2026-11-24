@@ -5,6 +5,7 @@ mod commands;
 mod connection;
 mod diagnostics;
 mod error;
+mod health;
 mod layout;
 mod link_route;
 mod list_window;

@@ -8,6 +8,13 @@ const MAX_TITLE_CHARS: usize = 200;
 const MAX_BODY_CHARS: usize = 500;
 const MAX_TAG_CHARS: usize = 200;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HealthReport {
+    Ok,
+    Down,
+    Session,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Signal {
     Open(String),
@@ -15,6 +22,7 @@ pub enum Signal {
     Cycle(bool),
     ZoomIn,
     Notify(Notice),
+    Health(HealthReport),
 }
 
 pub fn is_sentinel(url: &Url) -> bool {
@@ -50,6 +58,10 @@ pub fn parse(url: &Url) -> Option<Signal> {
         return parse_notify(url).map(Signal::Notify);
     }
 
+    if url.path() == "health" {
+        return parse_health(url).map(Signal::Health);
+    }
+
     let path = url
         .query_pairs()
         .find(|(key, _)| key == "path")
@@ -59,6 +71,20 @@ pub fn parse(url: &Url) -> Option<Signal> {
     match url.path() {
         "open" => Some(Signal::Open(path)),
         "route" => Some(Signal::Route(path)),
+        _ => None,
+    }
+}
+
+fn parse_health(url: &Url) -> Option<HealthReport> {
+    match url
+        .query_pairs()
+        .find(|(key, _)| key == "state")?
+        .1
+        .as_ref()
+    {
+        "ok" => Some(HealthReport::Ok),
+        "down" => Some(HealthReport::Down),
+        "session" => Some(HealthReport::Session),
         _ => None,
     }
 }
@@ -189,6 +215,31 @@ mod tests {
             (tag_201.as_str(), None),
             ("agent-board-client:notify?title=x&path=%2F%2Fevil.test", None),
             ("agent-board-client:notify?title=x&path=%2F%5Cx", None),
+        ];
+
+        for (input, expected) in cases {
+            assert_eq!(parse(&url(input)), expected, "{input}");
+        }
+    }
+
+    #[test]
+    fn parses_health_signals_with_a_known_state() {
+        let cases = [
+            (
+                "agent-board-client:health?state=ok",
+                Some(Signal::Health(HealthReport::Ok)),
+            ),
+            (
+                "agent-board-client:health?state=down",
+                Some(Signal::Health(HealthReport::Down)),
+            ),
+            (
+                "agent-board-client:health?state=session",
+                Some(Signal::Health(HealthReport::Session)),
+            ),
+            ("agent-board-client:health?state=up", None),
+            ("agent-board-client:health?state=", None),
+            ("agent-board-client:health", None),
         ];
 
         for (input, expected) in cases {

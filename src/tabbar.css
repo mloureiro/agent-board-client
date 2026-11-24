@@ -122,3 +122,62 @@ body {
     transition: background-color var(--duration-fast);
   }
 }
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--banner-height);
+  padding: 0 var(--space-3);
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.banner[hidden] {
+  display: none;
+}
+
+.banner-lead {
+  flex: none;
+  font-weight: 600;
+}
+
+.banner-message {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.banner[data-kind='unreachable'] {
+  background: var(--banner-danger-surface);
+  color: var(--banner-danger-text);
+}
+
+.banner[data-kind='unreachable'] .banner-lead {
+  color: var(--banner-danger-lead);
+}
+
+.banner[data-kind='sessionExpired'] {
+  background: var(--banner-session-surface);
+  color: var(--banner-session-text);
+}
+
+.banner[data-kind='sessionExpired'] .banner-lead {
+  color: var(--banner-session-lead);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .banner:not([hidden]) {
+    animation: banner-in var(--duration-fast) ease-out;
+  }
+}
+
+@keyframes banner-in {
+  from {
+    opacity: 0;
+  }
+}

@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::board_window;
 use crate::error::ClientError;
+use crate::health::Banner;
 use crate::store::ServerStore;
 use crate::tab_state::{self, SavedTabs};
 use crate::tabs::{Effect, TabSession, TabsView};
@@ -53,6 +54,10 @@ impl TabSessions {
 
     pub fn zoom(&self, server: Uuid) -> Option<Zoom> {
         self.sessions().get(&server).map(TabSession::zoom)
+    }
+
+    pub fn banner(&self, server: Uuid) -> Option<Banner> {
+        self.sessions().get(&server).and_then(TabSession::banner)
     }
 
     pub fn view(&self, server: Uuid) -> Result<TabsView, ClientError> {
@@ -154,6 +159,13 @@ fn perform(app: &AppHandle, batch: Batch) {
                     eprintln!("server {server}: the tab bar could not be updated: {error}");
                 }
                 app.state::<TabSessions>().persist(server, app, &saved);
+            }
+            Effect::Banner => {
+                board_window::relayout(app, server);
+                let target = EventTarget::webview(tabbar_label(server));
+                if let Err(error) = app.emit_to(target, TABS_CHANGED, &view) {
+                    eprintln!("server {server}: the tab bar could not be updated: {error}");
+                }
             }
             Effect::LimitReached => eprintln!("server {server}: tab limit reached"),
         }
