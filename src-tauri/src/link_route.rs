@@ -29,6 +29,19 @@ pub fn route(server: &Url, requested: &Url) -> LinkRoute {
     LinkRoute::Drop
 }
 
+const SERVER_PAGE_BYTES: usize = 2048;
+
+pub fn server_page(server: &Url, path: &str) -> Option<Url> {
+    let shaped = path.starts_with('/')
+        && path.len() <= SERVER_PAGE_BYTES
+        && !path.chars().any(char::is_control);
+    if !shaped {
+        return None;
+    }
+    let page = server.join(path).ok()?;
+    (page.origin() == server.origin()).then_some(page)
+}
+
 pub fn route_from_native(requested: &Url) -> LinkRoute {
     if matches!(requested.scheme(), "http" | "https") {
         LinkRoute::SystemBrowser
@@ -165,6 +178,56 @@ mod tests {
                 route(&parse(server), &parse(requested)),
                 expected,
                 "{requested} against {server}"
+            );
+        }
+    }
+
+    #[test]
+    fn opens_only_pages_of_the_servers_own_origin() {
+        let long = format!("/{}", "a".repeat(2048));
+        let accepted = [
+            (
+                "https://board.example.com/",
+                "/handoff/abc",
+                "https://board.example.com/handoff/abc",
+            ),
+            (
+                "https://board.example.com/",
+                "/settings/passkeys",
+                "https://board.example.com/settings/passkeys",
+            ),
+            (
+                "https://board.example.com/",
+                "/t/1?x=1",
+                "https://board.example.com/t/1?x=1",
+            ),
+            (
+                "http://localhost:4000/",
+                "/handoff/abc",
+                "http://localhost:4000/handoff/abc",
+            ),
+        ];
+        for (server, path, expected) in accepted {
+            assert_eq!(
+                server_page(&parse(server), path).map(String::from),
+                Some(expected.to_owned()),
+                "{path}"
+            );
+        }
+
+        let refused = [
+            "",
+            "handoff/abc",
+            "//evil.example/x",
+            "/\\evil.example/x",
+            "/a\nb",
+            long.as_str(),
+        ];
+        for path in refused {
+            assert_eq!(
+                server_page(&parse("https://board.example.com/"), path),
+                None,
+                "{path:?}"
             );
         }
     }
