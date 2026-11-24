@@ -1,3 +1,6 @@
+use std::future::Future;
+use std::time::Duration;
+
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -118,9 +121,12 @@ pub fn decide(
     Handshake::without_events(BoardState::SignedOut)
 }
 
+const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+const RETRY_DELAYS: [Duration; 2] = [Duration::from_secs(1), Duration::from_secs(2)];
+
 pub fn into_probe<T: DeserializeOwned>(answer: Result<Answer, BoardFailure>) -> Probe<T> {
     let answer = match answer {
-        Ok(Answer::NotTrpc { .. }) => return Probe::Missing,
+        Ok(Answer::NotTrpc { status }) if status < 500 => return Probe::Missing,
         Ok(Answer::Error(error)) if error.code == "NOT_FOUND" => return Probe::Missing,
         Ok(answer) => answer,
         Err(failure) => return Probe::Failed(failure),
@@ -134,16 +140,28 @@ pub fn into_probe<T: DeserializeOwned>(answer: Result<Answer, BoardFailure>) -> 
     }
 }
 
+async fn within(
+    limit: Duration,
+    answer: impl Future<Output = Result<Answer, BoardFailure>>,
+) -> Result<Answer, BoardFailure> {
+    tokio::time::timeout(limit, answer)
+        .await
+        .unwrap_or_else(|_| Err(BoardFailure::offline()))
+}
+
 async fn probe<T: DeserializeOwned>(app: &AppHandle, server: &Server, path: &str) -> Probe<T> {
     let http = app.state::<BoardHttp>();
-    let answer = board_api::exchange(
-        &http.calls,
-        &server.url,
-        CallKind::Query,
-        path,
-        None,
-        None,
-        BODY_CAP,
+    let answer = within(
+        PROBE_TIMEOUT,
+        board_api::exchange(
+            &http.calls,
+            &server.url,
+            CallKind::Query,
+            path,
+            None,
+            None,
+            BODY_CAP,
+        ),
     )
     .await;
     into_probe(answer)
@@ -190,8 +208,30 @@ pub async fn run(app: &AppHandle, server: &Server) -> Handshake {
     decide(version, Some(login), has_token)
 }
 
+async fn retrying<F, Fut>(delays: &[Duration], mut attempt: F) -> Handshake
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Handshake>,
+{
+    let mut handshake = attempt().await;
+    for delay in delays {
+        if !handshake.state.retry_after_recovery() {
+            break;
+        }
+        tokio::time::sleep(*delay).await;
+        handshake = attempt().await;
+    }
+    handshake
+}
+
+pub async fn rerun(app: &AppHandle, server: &Server) -> Handshake {
+    retrying(&RETRY_DELAYS, || run(app, server)).await
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use super::*;
     use crate::board_api::TrpcError;
     use serde_json::json;
@@ -377,10 +417,22 @@ mod tests {
             into_probe::<VersionAnswer>(Ok(Answer::Data(good))),
             version(1, &["events"])
         );
-        assert_eq!(
-            into_probe::<VersionAnswer>(Ok(Answer::NotTrpc { status: 502 })),
-            Probe::Missing
-        );
+        for status in [404, 499] {
+            assert_eq!(
+                into_probe::<VersionAnswer>(Ok(Answer::NotTrpc { status })),
+                Probe::Missing,
+                "{status}"
+            );
+        }
+        for status in [500, 502, 503] {
+            assert_eq!(
+                into_probe::<VersionAnswer>(Ok(Answer::NotTrpc { status })),
+                Probe::Failed(BoardFailure::server(&format!(
+                    "The board gave an unexpected answer (HTTP {status})."
+                ))),
+                "{status}"
+            );
+        }
         assert_eq!(
             into_probe::<VersionAnswer>(error("NOT_FOUND")),
             Probe::Missing
@@ -399,5 +451,46 @@ mod tests {
                 "The board's answer was not understood."
             ))
         );
+    }
+
+    #[test]
+    fn gives_up_on_a_probe_that_does_not_answer() {
+        let pending = tauri::async_runtime::block_on(within(
+            Duration::from_millis(20),
+            std::future::pending(),
+        ));
+        let ready = tauri::async_runtime::block_on(within(
+            Duration::from_millis(20),
+            std::future::ready(Ok(Answer::Data(json!(1)))),
+        ));
+
+        assert_eq!(pending, Err(BoardFailure::offline()));
+        assert_eq!(ready, Ok(Answer::Data(json!(1))));
+    }
+
+    #[test]
+    fn retries_only_a_transient_failure_and_only_so_often() {
+        use BoardState::*;
+        let rows: [(&[BoardState], BoardState, usize); 6] = [
+            (&[Ready], Ready, 1),
+            (&[BoardOnly], BoardOnly, 1),
+            (&[Offline, Ready], Ready, 2),
+            (&[Server, Offline, Ready], Ready, 3),
+            (&[Server, Server, Server, Ready], Server, 3),
+            (&[Offline, SignedOut], SignedOut, 2),
+        ];
+
+        for (script, expected, attempts) in rows {
+            let mut script: VecDeque<BoardState> = script.iter().copied().collect();
+            let mut calls = 0;
+            let result = tauri::async_runtime::block_on(retrying(&[Duration::ZERO; 2], || {
+                calls += 1;
+                let state = script.pop_front().unwrap();
+                async move { Handshake::without_events(state) }
+            }));
+
+            assert_eq!(result.state, expected, "{expected:?}");
+            assert_eq!(calls, attempts, "{expected:?}");
+        }
     }
 }

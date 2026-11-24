@@ -220,7 +220,7 @@ pub async fn board_state(
     relays: State<'_, Relays>,
 ) -> Result<BoardStateView, BoardCallError> {
     let server = native_server(&webview, &store)?;
-    let handshake = handshake::run(&app, &server).await;
+    let handshake = handshake::rerun(&app, &server).await;
     tab_session::apply(&app, server.id, |session| session.set_handshake(&handshake))?;
     Ok(BoardStateView {
         state: handshake.state,
