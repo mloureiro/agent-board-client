@@ -4,16 +4,24 @@ A desktop client for [agent-board](https://github.com/mloureiro/agent-board) ser
 Tauri 2. It keeps a list of servers and opens each one in its own window, using the operating
 system's webview.
 
+The client is becoming a full board UI of its own. Until every view is ported, pages it does not
+draw yet still open the board's own page, which may ask you to sign in and unlock separately.
+
 - A server is a name and an address. `https` is required; plain `http` is accepted only for
   `localhost`, `127.0.0.1` and `[::1]`.
 - Each server gets its own persistent website data store, so sign-in cookies and the board's keys
   survive restarts and are never shared between servers.
 - The client stores the server list and, per server, a tab file with the path and label of each
   open tab. A label can be a decrypted task title, saved in plaintext. The tab file is deleted when
-  the server is removed. The client stores no token, key or password.
+  the server is removed.
+- It will also store, per server, a session token in the system keychain and the keys derived from
+  your passphrase in that server's own data store. It never stores the passphrase or the data key.
+- All requests to a board will go from the app's native side. The client's own pages never call a
+  board directly.
 - A board page cannot call the client's native commands. Only the server list window can, and the
   tab bar of each server window can call three tab commands (snapshot, select, close) for its own
-  window only.
+  window only. The client's own pages (`board.html`) can call a fixed set of commands that act for
+  their own server only. None exists yet.
 
 macOS 14 or newer is required. Other platforms compile but are untested.
 
@@ -36,6 +44,9 @@ pnpm install
 pnpm dev            # run the app against the Vite dev server
 pnpm build          # build an unsigned app bundle into src-tauri/target/release/bundle
 ```
+
+`@agent-board/shared` is a git dependency on the public fork, pinned to a commit. No token is
+needed to install it.
 
 ## Checks
 
@@ -68,6 +79,12 @@ the unsigned app is then blocked; clear it with `xattr -dr com.apple.quarantine 
 ## Layout
 
 - `src/`: the server list window (TypeScript, no framework).
+- `board.html`, `src/board/`: the client's own board app (React and Mantine), shown in a tab instead
+  of the board's page once a page is ported.
+- `fixtures/native-pages.json`: the ported pages, empty until the first view lands. Listing `home`
+  also moves notifications and the health banner off the board page.
+- `fixtures/tab-kind-cases.json`: which pages open as native or board tabs, run by both test suites.
+- `tooling/`: build checks, including the one that keeps React out of the server list and tab bar.
 - `tabbar.html`, `src/tabbar*.ts`: the tab bar webview at the top of each server window.
 - `src-tauri/scripts/`: scripts injected into board pages, one reporting navigation to the client
   and one handling external links.
