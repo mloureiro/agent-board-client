@@ -10,8 +10,10 @@ use tauri::{
 use url::Url;
 use uuid::Uuid;
 
+use crate::board_events;
 use crate::connection;
 use crate::error::ClientError;
+use crate::handshake::{self, Handshake};
 use crate::layout::{self, Slot};
 use crate::link_route::{self, LinkRoute};
 use crate::native_page;
@@ -371,7 +373,12 @@ fn lay_out(app: &AppHandle, id: Uuid, size: PhysicalSize<u32>, scale_factor: f64
     }
 }
 
-fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), ClientError> {
+fn build_window(
+    app: &AppHandle,
+    server: &Server,
+    url: Url,
+    handshake: Option<&Handshake>,
+) -> Result<(), ClientError> {
     let id = server.id;
     let window = WindowBuilder::new(app, window_label(id))
         .title(&server.name)
@@ -382,8 +389,11 @@ fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), Client
 
     let saved = tab_state::restore(tab_state::read(app, id));
     let selected = saved.selected;
-    app.state::<TabSessions>()
-        .insert(id, TabSession::restored(&saved));
+    let mut session = TabSession::restored(&saved);
+    if let Some(handshake) = handshake {
+        session.set_handshake(handshake);
+    }
+    app.state::<TabSessions>().insert(id, session);
 
     let layout_app = app.clone();
     window.on_window_event(move |event| match event {
@@ -403,6 +413,7 @@ fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), Client
         WindowEvent::Destroyed => {
             layout_app.state::<TabSessions>().remove(id);
             layout_app.state::<NotifyLimits>().forget(id);
+            board_events::stop(&layout_app, id);
         }
         _ => {}
     });
@@ -415,6 +426,10 @@ fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), Client
         TabKind::Board => add_board_webview(app, &window, id, &url, HOME, url.clone()),
         TabKind::Native => add_native_webview(app, &window, server, HOME, "/"),
     });
+    if built.is_ok() {
+        let wanted = app.state::<TabSessions>().relay_wanted(id);
+        board_events::sync(app, id, wanted);
+    }
     if built.is_ok() && selected != HOME {
         let _ = tab_session::apply(app, id, |session| session.select(selected));
     }
@@ -424,7 +439,11 @@ fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), Client
     built
 }
 
-pub fn open(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
+pub fn open(
+    app: &AppHandle,
+    server: &Server,
+    handshake: Option<&Handshake>,
+) -> Result<(), ClientError> {
     if let Some(window) = app.get_window(&window_label(server.id)) {
         window.unminimize()?;
         window.set_focus()?;
@@ -432,7 +451,7 @@ pub fn open(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
     }
 
     let url = check_server_url(server.url.as_str())?;
-    build_window(app, server, url)
+    build_window(app, server, url, handshake)
 }
 
 pub fn open_from_notification(app: &AppHandle, server: &str, path: &str) {
@@ -458,10 +477,13 @@ pub fn open_from_notification(app: &AppHandle, server: &str, path: &str) {
 }
 
 pub async fn connect_and_open(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
-    if app.get_window(&window_label(server.id)).is_none() {
+    let handshake = if app.get_window(&window_label(server.id)).is_none() {
         connection::check(&server.url).await?;
-    }
-    open(app, server)
+        Some(handshake::run(app, server).await)
+    } else {
+        None
+    };
+    open(app, server, handshake.as_ref())
 }
 
 pub fn retitle(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
@@ -473,6 +495,7 @@ pub fn retitle(app: &AppHandle, server: &Server) -> Result<(), ClientError> {
 
 pub fn close(app: &AppHandle, id: Uuid) -> Result<(), ClientError> {
     app.state::<TabSessions>().remove(id);
+    board_events::stop(app, id);
     if let Some(window) = app.get_window(&window_label(id)) {
         window.destroy()?;
     }

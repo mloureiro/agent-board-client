@@ -3,5 +3,10 @@
   "identifier": "native",
   "description": "The client's own board pages (board.html) inside a server window. It must stay matched by webview label only: Tauri also grants a permission when the window label matches, so a window match would hand these permissions to the board pages loaded from the server in the same window. No remote origin is listed, so a page from a server can never match.",
   "webviews": ["native-*"],
-  "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-board-call",
+    "allow-board-state"
+  ]
 }

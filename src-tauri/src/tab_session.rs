@@ -5,8 +5,10 @@ use tauri::{AppHandle, Emitter, EventTarget, Manager, Webview};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use uuid::Uuid;
 
+use crate::board_events;
 use crate::board_window;
 use crate::error::ClientError;
+use crate::handshake;
 use crate::health::Banner;
 use crate::store::ServerStore;
 use crate::tab_kind::TabKind;
@@ -22,6 +24,7 @@ struct Batch {
     view: TabsView,
     saved: SavedTabs,
     kinds: Vec<(u64, TabKind)>,
+    relay: Option<bool>,
 }
 
 pub struct TabSessions {
@@ -66,6 +69,12 @@ impl TabSessions {
         self.sessions().get(&server).and_then(TabSession::banner)
     }
 
+    pub fn relay_wanted(&self, server: Uuid) -> bool {
+        self.sessions()
+            .get(&server)
+            .is_some_and(TabSession::relay_wanted)
+    }
+
     pub fn view(&self, server: Uuid) -> Result<TabsView, ClientError> {
         self.sessions()
             .get(&server)
@@ -103,8 +112,10 @@ pub fn apply(
     let sessions = app.state::<TabSessions>();
     let mut guard = sessions.sessions();
     let session = guard.get_mut(&server).ok_or(ClientError::NotFound)?;
+    let relay_before = session.relay_wanted();
     let effects = change(session);
-    if effects.is_empty() {
+    let relay_after = session.relay_wanted();
+    if effects.is_empty() && relay_before == relay_after {
         return Ok(());
     }
 
@@ -117,6 +128,7 @@ pub fn apply(
         view,
         saved,
         kinds,
+        relay: (relay_before != relay_after).then_some(relay_after),
     });
     if queued.is_err() {
         eprintln!("server {server}: tab effects could not be queued");
@@ -131,6 +143,7 @@ fn perform(app: &AppHandle, batch: Batch) {
         view,
         saved,
         kinds,
+        relay,
     } = batch;
 
     for effect in effects {
@@ -179,9 +192,25 @@ fn perform(app: &AppHandle, batch: Batch) {
                     eprintln!("server {server}: the tab bar could not be updated: {error}");
                 }
             }
+            Effect::Handshake => rehandshake(app, server),
             Effect::LimitReached => eprintln!("server {server}: tab limit reached"),
         }
     }
+
+    if let Some(wanted) = relay {
+        board_events::sync(app, server, wanted);
+    }
+}
+
+fn rehandshake(app: &AppHandle, id: Uuid) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let Ok(server) = app.state::<ServerStore>().find(id) else {
+            return;
+        };
+        let handshake = handshake::run(&app, &server).await;
+        let _ = apply(&app, id, |session| session.set_handshake(&handshake));
+    });
 }
 
 fn webviews_of(app: &AppHandle, server: Uuid, tab: u64, kinds: &[(u64, TabKind)]) -> Vec<Webview> {
