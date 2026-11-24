@@ -208,7 +208,7 @@ fn rehandshake(app: &AppHandle, id: Uuid) {
         let Ok(server) = app.state::<ServerStore>().find(id) else {
             return;
         };
-        let handshake = handshake::run(&app, &server).await;
+        let handshake = handshake::rerun(&app, &server).await;
         let _ = apply(&app, id, |session| session.set_handshake(&handshake));
     });
 }

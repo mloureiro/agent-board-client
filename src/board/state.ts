@@ -30,9 +30,11 @@ export function useBoardState(): {
   refetchInterval: number | false;
 } {
   const queryClient = useQueryClient();
+  const [listening, setListening] = useState(false);
   const { data: view } = useQuery({
     queryKey: BOARD_STATE_KEY,
     queryFn: () => invoke<BoardStateView>('board_state'),
+    enabled: listening,
   });
   const [pushedUp, setPushedUp] = useState<boolean | undefined>(undefined);
 
@@ -44,7 +46,10 @@ export function useBoardState(): {
     const webview = getCurrentWebview();
     Promise.all([
       webview.listen('board-changed', () => {
-        void queryClient.invalidateQueries({ refetchType: 'active' });
+        void queryClient.invalidateQueries({
+          predicate: (query) => query.queryKey[0] !== BOARD_STATE_KEY[0],
+          refetchType: 'active',
+        });
       }),
       webview.listen<{ up: boolean }>('board-events', (event) => {
         setPushedUp(event.payload.up);
@@ -60,10 +65,14 @@ export function useBoardState(): {
           });
         } else {
           unlisten = handlers;
+          setListening(true);
         }
       })
       .catch((error: unknown) => {
         console.error('The board listeners could not be registered', error);
+        if (!cancelled) {
+          setListening(true);
+        }
       });
 
     return () => {

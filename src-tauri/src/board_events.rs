@@ -152,7 +152,10 @@ fn emit_to_native<S: Serialize + Clone>(app: &AppHandle, server: Uuid, name: &st
             continue;
         }
         if let Err(error) = app.emit_to(EventTarget::webview(label), name, payload.clone()) {
-            eprintln!("server {server}: {name} could not be delivered: {error}");
+            diagnostics::record(
+                app,
+                &format!("server {server}: {name} could not be delivered: {error}"),
+            );
         }
     }
 }
@@ -208,8 +211,18 @@ async fn stream_once(
     let Ok(request) = board_api::with_board_headers(http.streams.get(url), session.as_ref()) else {
         return Ended::Retry;
     };
-    let Ok(mut response) = request.send().await else {
-        return Ended::Retry;
+    let mut response = match request.send().await {
+        Ok(response) => response,
+        Err(error) => {
+            diagnostics::record(
+                app,
+                &format!(
+                    "server {server_id}: the event stream could not be reached: {}",
+                    error.without_url()
+                ),
+            );
+            return Ended::Retry;
+        }
     };
 
     if response.status().as_u16() == 401 {
@@ -230,7 +243,21 @@ async fn stream_once(
     }
 
     let mut parser = SseParser::default();
-    while let Ok(Some(chunk)) = response.chunk().await {
+    loop {
+        let chunk = match response.chunk().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            Err(error) => {
+                diagnostics::record(
+                    app,
+                    &format!(
+                        "server {server_id}: the event stream broke: {}",
+                        error.without_url()
+                    ),
+                );
+                break;
+            }
+        };
         let Ok(items) = parser.push(&chunk) else {
             break;
         };
