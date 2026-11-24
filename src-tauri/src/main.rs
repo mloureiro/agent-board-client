@@ -22,6 +22,7 @@ mod user_notifications;
 #[cfg(target_os = "macos")]
 mod webkit_prefs;
 mod webview_store;
+mod zoom;
 
 use tauri::{AppHandle, Manager, RunEvent};
 

@@ -55,6 +55,7 @@ use serde::Serialize;
 use crate::health::{Banner, Health};
 use crate::sentinel::HealthReport;
 use crate::tab_state::{SavedTab, SavedTabs};
+use crate::zoom::{Zoom, ZoomStep};
 
 pub const HOME: u64 = 0;
 pub const MAX_TABS: usize = 20;
@@ -88,6 +89,7 @@ pub enum Effect {
     Show(u64),
     Hide(u64),
     Destroy(u64),
+    Zoom(Zoom),
     Changed,
     Banner,
     LimitReached,
@@ -112,6 +114,7 @@ pub struct TabSession {
     tabs: Vec<Tab>,
     selected: u64,
     next_id: u64,
+    zoom: Zoom,
     health: Health,
 }
 
@@ -121,6 +124,7 @@ impl Default for TabSession {
             tabs: Vec::new(),
             selected: HOME,
             next_id: 1,
+            zoom: Zoom::default(),
             health: Health::default(),
         }
     }
@@ -149,6 +153,7 @@ impl TabSession {
             next_id: tabs.len() as u64 + 1,
             tabs,
             selected: HOME,
+            zoom: Zoom::default(),
             health: Health::default(),
         }
     }
@@ -347,6 +352,19 @@ impl TabSession {
         self.select(order[target])
     }
 
+    pub fn zoom(&self) -> Zoom {
+        self.zoom
+    }
+
+    pub fn step_zoom(&mut self, step: ZoomStep) -> Vec<Effect> {
+        let zoom = self.zoom.step(step);
+        if zoom == self.zoom {
+            return Vec::new();
+        }
+        self.zoom = zoom;
+        vec![Effect::Zoom(zoom)]
+    }
+
     pub fn report_health(&mut self, report: HealthReport) -> Vec<Effect> {
         if self.health.report(report) {
             vec![Effect::Banner]
@@ -458,6 +476,7 @@ mod tests {
             next_id: tabs.len() as u64 + 1,
             tabs,
             selected,
+            zoom: Zoom::default(),
             health: Health::default(),
         }
     }
@@ -929,5 +948,20 @@ mod tests {
         selected.open("/t/2");
 
         assert_eq!(activated.activate(HOME), selected.select(HOME));
+    }
+
+    #[test]
+    fn zooms_every_tab_and_stops_at_actual_size() {
+        let mut model = session(&["/settings"], 1, &[]);
+        let zoomed = Zoom::default().step(ZoomStep::In);
+
+        assert_eq!(model.step_zoom(ZoomStep::In), vec![Effect::Zoom(zoomed)]);
+        assert_eq!(model.zoom(), zoomed);
+
+        assert_eq!(
+            model.step_zoom(ZoomStep::Reset),
+            vec![Effect::Zoom(Zoom::default())]
+        );
+        assert_eq!(model.step_zoom(ZoomStep::Reset), vec![]);
     }
 }

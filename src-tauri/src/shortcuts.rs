@@ -5,12 +5,16 @@ use tauri::menu::{
 use tauri::{AppHandle, Manager, Wry};
 use uuid::Uuid;
 
+use crate::zoom::ZoomStep;
 use crate::{board_window, list_window, tab_session};
 
 const CLOSE_TAB: &str = "tab-close";
 const NEXT_TAB: &str = "tab-next";
 const PREVIOUS_TAB: &str = "tab-previous";
 const SELECT_PREFIX: &str = "tab-select-";
+const ZOOM_IN: &str = "zoom-in";
+const ZOOM_OUT: &str = "zoom-out";
+const ZOOM_RESET: &str = "zoom-reset";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TabAction {
@@ -18,6 +22,7 @@ pub enum TabAction {
     Next,
     Previous,
     Nth(u8),
+    Zoom(ZoomStep),
 }
 
 pub fn action(id: &str) -> Option<TabAction> {
@@ -25,6 +30,9 @@ pub fn action(id: &str) -> Option<TabAction> {
         CLOSE_TAB => Some(TabAction::CloseTab),
         NEXT_TAB => Some(TabAction::Next),
         PREVIOUS_TAB => Some(TabAction::Previous),
+        ZOOM_IN => Some(TabAction::Zoom(ZoomStep::In)),
+        ZOOM_OUT => Some(TabAction::Zoom(ZoomStep::Out)),
+        ZOOM_RESET => Some(TabAction::Zoom(ZoomStep::Reset)),
         _ => {
             let n: u8 = id.strip_prefix(SELECT_PREFIX)?.parse().ok()?;
             (1..=9).contains(&n).then_some(TabAction::Nth(n))
@@ -97,13 +105,22 @@ pub fn menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     }
     menu.append(&file)?;
     menu.append(&edit)?;
-    #[cfg(target_os = "macos")]
-    menu.append(&Submenu::with_items(
+    let view = Submenu::with_items(
         app,
         "View",
         true,
-        &[&PredefinedMenuItem::fullscreen(app, None)?],
-    )?)?;
+        &[
+            &item(app, ZOOM_RESET, "Actual Size", "CmdOrCtrl+0")?,
+            &item(app, ZOOM_IN, "Zoom In", "CmdOrCtrl+=")?,
+            &item(app, ZOOM_OUT, "Zoom Out", "CmdOrCtrl+-")?,
+        ],
+    )?;
+    #[cfg(target_os = "macos")]
+    {
+        view.append(&PredefinedMenuItem::separator(app)?)?;
+        view.append(&PredefinedMenuItem::fullscreen(app, None)?)?;
+    }
+    menu.append(&view)?;
     menu.append(&window)?;
     menu.append(&help)?;
 
@@ -157,6 +174,7 @@ pub fn handle(app: &AppHandle, event: MenuEvent) {
         TabAction::Next => session.cycle(true),
         TabAction::Previous => session.cycle(false),
         TabAction::Nth(n) => session.select_nth(n),
+        TabAction::Zoom(step) => session.step_zoom(step),
     });
     if let Err(error) = result {
         eprintln!("server {server}: the tab shortcut could not be applied: {error:?}");
@@ -173,6 +191,9 @@ mod tests {
             ("tab-close", Some(TabAction::CloseTab)),
             ("tab-next", Some(TabAction::Next)),
             ("tab-previous", Some(TabAction::Previous)),
+            ("zoom-in", Some(TabAction::Zoom(ZoomStep::In))),
+            ("zoom-out", Some(TabAction::Zoom(ZoomStep::Out))),
+            ("zoom-reset", Some(TabAction::Zoom(ZoomStep::Reset))),
             ("tab-select-0", None),
             ("tab-select-10", None),
             ("tab-select-x", None),

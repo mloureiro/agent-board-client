@@ -20,6 +20,7 @@ pub enum Signal {
     Open(String),
     Route(String),
     Cycle(bool),
+    ZoomIn,
     Notify(Notice),
     Health(HealthReport),
 }
@@ -46,6 +47,11 @@ pub fn parse(url: &Url) -> Option<Signal> {
             "previous" => Some(Signal::Cycle(false)),
             _ => None,
         };
+    }
+
+    if url.path() == "zoom" {
+        let step = url.query_pairs().find(|(key, _)| key == "step")?.1;
+        return (step == "in").then_some(Signal::ZoomIn);
     }
 
     if url.path() == "notify" {
@@ -155,6 +161,9 @@ mod tests {
             ),
             ("agent-board-client:cycle?dir=sideways", None),
             ("agent-board-client:cycle", None),
+            ("agent-board-client:zoom?step=in", Some(Signal::ZoomIn)),
+            ("agent-board-client:zoom?step=out", None),
+            ("agent-board-client:zoom", None),
             ("agent-board-client:close?path=%2Fsettings", None),
             ("agent-board-client:open", None),
             ("agent-board-client:open?other=%2Fsettings", None),
