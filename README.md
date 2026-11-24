@@ -17,6 +17,16 @@ system's webview.
 
 macOS 14 or newer is required. Other platforms compile but are untested.
 
+## Signing in
+
+Passkeys do not work inside a server window, because the system webview refuses them for this
+app. A board that offers "Sign in with your browser" shows a code and a link in the window. The
+link opens in the default browser, where you sign in by any method and approve after checking
+that the code matches. The window then signs in by itself.
+
+The board must run a version with this hand-off flow. Other sign-in methods keep working in the
+window.
+
 ## Development
 
 Requires Node 24 or newer, pnpm, and a stable Rust toolchain with `rustfmt` and `clippy`.

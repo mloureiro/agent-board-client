@@ -7,9 +7,18 @@ pub enum LinkRoute {
     Drop,
 }
 
+// The board's sign-in hand-off page, which must run in the default browser where passkeys work.
+const HANDOFF_PATH_PREFIX: &str = "/handoff/";
+
 pub fn route(server: &Url, requested: &Url) -> LinkRoute {
     let is_web = matches!(requested.scheme(), "http" | "https");
-    if is_web && requested.origin() == server.origin() {
+    let is_same_origin = is_web && requested.origin() == server.origin();
+
+    if is_same_origin && requested.path().starts_with(HANDOFF_PATH_PREFIX) {
+        return LinkRoute::SystemBrowser;
+    }
+
+    if is_same_origin {
         return LinkRoute::SameWindow;
     }
 
@@ -81,6 +90,41 @@ mod tests {
                 "http://[::1]:4000/",
                 "http://[::1]:4000/x",
                 LinkRoute::SameWindow,
+            ),
+            (
+                "https://board.example.com/",
+                "https://board.example.com/handoff/abc",
+                LinkRoute::SystemBrowser,
+            ),
+            (
+                "https://board.example.com/",
+                "https://board.example.com/handoff/abc?x=1",
+                LinkRoute::SystemBrowser,
+            ),
+            (
+                "https://board.example.com/",
+                "https://board.example.com/handoff",
+                LinkRoute::SameWindow,
+            ),
+            (
+                "https://board.example.com/",
+                "https://board.example.com/handoffs/abc",
+                LinkRoute::SameWindow,
+            ),
+            (
+                "https://board.example.com/",
+                "https://board.example.com/t/handoff/abc",
+                LinkRoute::SameWindow,
+            ),
+            (
+                "https://board.example.com/",
+                "https://other.example.com/handoff/abc",
+                LinkRoute::SystemBrowser,
+            ),
+            (
+                "http://[::1]:4000/",
+                "http://[::1]:4000/handoff/abc",
+                LinkRoute::SystemBrowser,
             ),
         ];
 
