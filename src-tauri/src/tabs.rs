@@ -54,6 +54,7 @@ use serde::Serialize;
 
 use crate::health::{Banner, Health};
 use crate::sentinel::HealthReport;
+use crate::tab_kind::{NativePages, TabKind};
 use crate::tab_state::{SavedTab, SavedTabs};
 use crate::zoom::{Zoom, ZoomStep};
 
@@ -81,11 +82,13 @@ pub struct Tab {
     pub page: Page,
     pub label: String,
     pub loaded: bool,
+    pub kind: TabKind,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
-    Load(u64, String),
+    Load(u64, String, TabKind),
+    Rebuild(u64, String, TabKind),
     Show(u64),
     Hide(u64),
     Destroy(u64),
@@ -116,6 +119,8 @@ pub struct TabSession {
     next_id: u64,
     zoom: Zoom,
     health: Health,
+    pages: NativePages,
+    board_only: bool,
 }
 
 impl Default for TabSession {
@@ -126,6 +131,8 @@ impl Default for TabSession {
             next_id: 1,
             zoom: Zoom::default(),
             health: Health::default(),
+            pages: NativePages::bundled().clone(),
+            board_only: true,
         }
     }
 }
@@ -134,28 +141,46 @@ impl TabSession {
     /// Expects `saved` to have passed `tab_state::restore`. Every tab starts unloaded and 🏠 is
     /// selected; selecting the saved tab afterwards loads it. Saved tab `n` gets id `n`.
     pub fn restored(saved: &SavedTabs) -> Self {
+        let session = Self::default();
         let tabs: Vec<Tab> = saved
             .tabs
             .iter()
             .zip(1..)
-            .filter_map(|(entry, id)| match page_of(&entry.path) {
-                Route::Page(page) => Some(Tab {
+            .filter_map(|(entry, id)| {
+                let route = page_of(&entry.path);
+                let kind = session.kind_for(&route);
+                let Route::Page(page) = route else {
+                    return None;
+                };
+                Some(Tab {
                     id,
                     path: entry.path.clone(),
                     page,
                     label: entry.label.clone(),
                     loaded: false,
-                }),
-                _ => None,
+                    kind,
+                })
             })
             .collect();
         Self {
             next_id: tabs.len() as u64 + 1,
             tabs,
-            selected: HOME,
-            zoom: Zoom::default(),
-            health: Health::default(),
+            ..session
         }
+    }
+
+    fn kind_for(&self, route: &Route) -> TabKind {
+        self.pages.kind_of(route, self.board_only)
+    }
+
+    pub fn home_kind(&self) -> TabKind {
+        self.kind_for(&Route::Home)
+    }
+
+    pub fn tab_kinds(&self) -> Vec<(u64, TabKind)> {
+        std::iter::once((HOME, self.home_kind()))
+            .chain(self.tabs.iter().map(|tab| (tab.id, tab.kind)))
+            .collect()
     }
 
     pub fn saved(&self) -> SavedTabs {
@@ -195,16 +220,18 @@ impl TabSession {
 
         let id = self.next_id;
         self.next_id += 1;
+        let kind = self.kind_for(&Route::Page(page.clone()));
         self.tabs.push(Tab {
             id,
             path: path.to_owned(),
             label: page.path_label().to_owned(),
             page,
             loaded: true,
+            kind,
         });
         let previous = std::mem::replace(&mut self.selected, id);
         vec![
-            Effect::Load(id, path.to_owned()),
+            Effect::Load(id, path.to_owned(), kind),
             Effect::Hide(previous),
             Effect::Show(id),
             Effect::Changed,
@@ -231,8 +258,9 @@ impl TabSession {
                 effects
             }
             Route::Page(page) => {
+                let kind = self.kind_for(&Route::Page(page.clone()));
                 let current = &mut self.tabs[index];
-                if current.path == path && current.page == page {
+                if current.path == path && current.page == page && current.kind == kind {
                     return Vec::new();
                 }
                 if current.page != page {
@@ -240,9 +268,20 @@ impl TabSession {
                 }
                 current.path = path.to_owned();
                 current.page = page;
-                vec![Effect::Changed]
+                if current.kind == kind {
+                    return vec![Effect::Changed];
+                }
+                current.kind = kind;
+                vec![Effect::Rebuild(tab, path.to_owned(), kind), Effect::Changed]
             }
-            Route::Other => Vec::new(),
+            Route::Other => {
+                let current = &mut self.tabs[index];
+                if current.kind == TabKind::Board {
+                    return Vec::new();
+                }
+                current.kind = TabKind::Board;
+                vec![Effect::Rebuild(tab, path.to_owned(), TabKind::Board)]
+            }
         }
     }
 
@@ -270,7 +309,7 @@ impl TabSession {
             };
             if !target.loaded {
                 target.loaded = true;
-                effects.push(Effect::Load(tab, target.path.clone()));
+                effects.push(Effect::Load(tab, target.path.clone(), target.kind));
             }
         }
 
@@ -306,7 +345,7 @@ impl TabSession {
                 Some(next) => {
                     if !next.loaded {
                         next.loaded = true;
-                        effects.push(Effect::Load(next.id, next.path.clone()));
+                        effects.push(Effect::Load(next.id, next.path.clone(), next.kind));
                     }
                     next.id
                 }
@@ -401,6 +440,7 @@ mod tests {
     use serde::Deserialize;
 
     use super::*;
+    use crate::tab_kind::PageKind;
 
     #[derive(Deserialize)]
     struct Case {
@@ -443,6 +483,7 @@ mod tests {
     }
 
     type ModelCase<'a> = (&'a str, TabSession, Op, Vec<Effect>, u64, Vec<&'a str>);
+    type KindCase<'a> = (&'a str, TabSession, Op, Vec<Effect>, TabKind, &'a str);
 
     enum Op {
         Open(&'static str),
@@ -469,6 +510,7 @@ mod tests {
                     label: page.path_label().to_owned(),
                     page,
                     loaded: !unloaded.contains(&id),
+                    kind: TabKind::Board,
                 }
             })
             .collect();
@@ -476,13 +518,187 @@ mod tests {
             next_id: tabs.len() as u64 + 1,
             tabs,
             selected,
-            zoom: Zoom::default(),
-            health: Health::default(),
+            ..TabSession::default()
         }
     }
 
     fn paths(session: &TabSession) -> Vec<&str> {
         session.tabs.iter().map(|tab| tab.path.as_str()).collect()
+    }
+
+    fn kind_session(
+        paths: &[&str],
+        selected: u64,
+        unloaded: &[u64],
+        pages: &[PageKind],
+        board_only: bool,
+    ) -> TabSession {
+        let mut session = session(paths, selected, unloaded);
+        session.pages = NativePages::listing(pages);
+        session.board_only = board_only;
+        for tab in &mut session.tabs {
+            tab.kind = session
+                .pages
+                .kind_of(&Route::Page(tab.page.clone()), board_only);
+        }
+        session
+    }
+
+    fn kind_of(session: &TabSession, tab: u64) -> TabKind {
+        session.tabs.iter().find(|t| t.id == tab).unwrap().kind
+    }
+
+    #[test]
+    fn builds_a_tab_of_the_kind_its_page_has() {
+        use Effect::*;
+
+        let cases: Vec<KindCase> = vec![
+            (
+                "open a native page",
+                kind_session(&[], 0, &[], &[PageKind::Task], false),
+                Op::Open("/t/1"),
+                vec![
+                    Load(1, "/t/1".into(), TabKind::Native),
+                    Hide(0),
+                    Show(1),
+                    Changed,
+                ],
+                TabKind::Native,
+                "/t/1",
+            ),
+            (
+                "open while board only",
+                kind_session(&[], 0, &[], &[PageKind::Task], true),
+                Op::Open("/t/1"),
+                vec![
+                    Load(1, "/t/1".into(), TabKind::Board),
+                    Hide(0),
+                    Show(1),
+                    Changed,
+                ],
+                TabKind::Board,
+                "/t/1",
+            ),
+            (
+                "select an unloaded native tab",
+                kind_session(&["/settings"], 0, &[1], &[PageKind::Settings], false),
+                Op::Select(1),
+                vec![
+                    Load(1, "/settings".into(), TabKind::Native),
+                    Hide(0),
+                    Show(1),
+                    Changed,
+                ],
+                TabKind::Native,
+                "/settings",
+            ),
+            (
+                "route a board tab onto a native page",
+                kind_session(&["/backlog"], 1, &[], &[PageKind::Settings], false),
+                Op::Route(1, "/settings"),
+                vec![Rebuild(1, "/settings".into(), TabKind::Native), Changed],
+                TabKind::Native,
+                "/settings",
+            ),
+            (
+                "route a native tab onto a board page",
+                kind_session(&["/settings"], 1, &[], &[PageKind::Settings], false),
+                Op::Route(1, "/backlog"),
+                vec![Rebuild(1, "/backlog".into(), TabKind::Board), Changed],
+                TabKind::Board,
+                "/backlog",
+            ),
+            (
+                "route a native tab within its kind",
+                kind_session(&["/t/1"], 1, &[], &[PageKind::Task], false),
+                Op::Route(1, "/t/2"),
+                vec![Changed],
+                TabKind::Native,
+                "/t/2",
+            ),
+            (
+                "route a native tab to where it already is",
+                kind_session(&["/t/1"], 1, &[], &[PageKind::Task], false),
+                Op::Route(1, "/t/1"),
+                vec![],
+                TabKind::Native,
+                "/t/1",
+            ),
+            (
+                "route a native tab to another path",
+                kind_session(&["/settings"], 1, &[], &[PageKind::Settings], false),
+                Op::Route(1, "/login/oidc"),
+                vec![Rebuild(1, "/login/oidc".into(), TabKind::Board)],
+                TabKind::Board,
+                "/settings",
+            ),
+            (
+                "route a board tab to another path",
+                kind_session(&["/backlog"], 1, &[], &[PageKind::Settings], false),
+                Op::Route(1, "/login/oidc"),
+                vec![],
+                TabKind::Board,
+                "/backlog",
+            ),
+            (
+                "route while board only",
+                kind_session(&["/backlog"], 1, &[], &[PageKind::Settings], true),
+                Op::Route(1, "/settings"),
+                vec![Changed],
+                TabKind::Board,
+                "/settings",
+            ),
+            (
+                "route a native tab home",
+                kind_session(&["/settings"], 1, &[], &[PageKind::Settings], false),
+                Op::Route(1, "/"),
+                vec![Destroy(1), Show(0), Changed],
+                TabKind::Board,
+                "",
+            ),
+        ];
+
+        for (name, mut session, op, effects, kind, path) in cases {
+            let actual = match op {
+                Op::Open(path) => session.open(path),
+                Op::Route(tab, path) => session.route(tab, path),
+                Op::Select(tab) => session.select(tab),
+                _ => unreachable!(),
+            };
+
+            assert_eq!(actual, effects, "{name}: effects");
+            match session.tabs.first() {
+                Some(tab) => {
+                    assert_eq!(tab.kind, kind, "{name}: kind");
+                    assert_eq!(tab.path, path, "{name}: path");
+                }
+                None => assert_eq!(path, "", "{name}: tab removed"),
+            }
+        }
+    }
+
+    #[test]
+    fn reports_the_kind_of_home_and_every_tab() {
+        let native_home = kind_session(&["/backlog"], 0, &[], &[PageKind::Home], false);
+        let board_only = kind_session(&["/backlog"], 0, &[], &[PageKind::Home], true);
+
+        assert_eq!(native_home.home_kind(), TabKind::Native);
+        assert_eq!(
+            native_home.tab_kinds(),
+            vec![(HOME, TabKind::Native), (1, TabKind::Board)]
+        );
+        assert_eq!(board_only.home_kind(), TabKind::Board);
+    }
+
+    #[test]
+    fn restores_every_tab_as_a_board_tab_while_the_table_is_empty() {
+        let saved = session(&["/backlog", "/t/1"], 0, &[]).saved();
+        let restored = TabSession::restored(&saved);
+
+        assert_eq!(kind_of(&restored, 1), TabKind::Board);
+        assert_eq!(kind_of(&restored, 2), TabKind::Board);
+        assert_eq!(restored.home_kind(), TabKind::Board);
+        assert_eq!(restored.saved(), saved);
     }
 
     #[test]
@@ -497,7 +713,12 @@ mod tests {
                 "open a page",
                 session(&[], 0, &[]),
                 Op::Open("/backlog"),
-                vec![Load(1, "/backlog".into()), Hide(0), Show(1), Changed],
+                vec![
+                    Load(1, "/backlog".into(), TabKind::Board),
+                    Hide(0),
+                    Show(1),
+                    Changed,
+                ],
                 1,
                 vec!["/backlog"],
             ),
@@ -641,7 +862,12 @@ mod tests {
                 "close the selected tab before an unloaded one",
                 session(&["/backlog", "/closed"], 1, &[2]),
                 Op::Close(1),
-                vec![Destroy(1), Load(2, "/closed".into()), Show(2), Changed],
+                vec![
+                    Destroy(1),
+                    Load(2, "/closed".into(), TabKind::Board),
+                    Show(2),
+                    Changed,
+                ],
                 2,
                 vec!["/closed"],
             ),
@@ -649,7 +875,12 @@ mod tests {
                 "select an unloaded tab",
                 session(&["/backlog", "/closed"], 0, &[2]),
                 Op::Select(2),
-                vec![Load(2, "/closed".into()), Hide(0), Show(2), Changed],
+                vec![
+                    Load(2, "/closed".into(), TabKind::Board),
+                    Hide(0),
+                    Show(2),
+                    Changed,
+                ],
                 2,
                 vec!["/backlog", "/closed"],
             ),
@@ -852,7 +1083,7 @@ mod tests {
 
         assert_eq!(
             session.open("/backlog")[0],
-            Effect::Load(2, "/backlog".into())
+            Effect::Load(2, "/backlog".into(), TabKind::Board)
         );
     }
 
@@ -915,7 +1146,7 @@ mod tests {
         assert_eq!(
             restored.select(saved.selected),
             vec![
-                Effect::Load(2, "/settings".to_owned()),
+                Effect::Load(2, "/settings".to_owned(), TabKind::Board),
                 Effect::Hide(HOME),
                 Effect::Show(2),
                 Effect::Changed,
@@ -924,7 +1155,7 @@ mod tests {
         assert_eq!(restored.saved(), saved);
         assert_eq!(
             restored.open("/t/9").first(),
-            Some(&Effect::Load(3, "/t/9".to_owned()))
+            Some(&Effect::Load(3, "/t/9".to_owned(), TabKind::Board))
         );
     }
 

@@ -29,12 +29,44 @@ pub fn route(server: &Url, requested: &Url) -> LinkRoute {
     LinkRoute::Drop
 }
 
+pub fn route_from_native(requested: &Url) -> LinkRoute {
+    if matches!(requested.scheme(), "http" | "https") {
+        LinkRoute::SystemBrowser
+    } else {
+        LinkRoute::Drop
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn parse(input: &str) -> Url {
         Url::parse(input).expect("test url parses")
+    }
+
+    #[test]
+    fn sends_a_link_from_a_native_page_to_the_system_browser_or_drops_it() {
+        let cases = [
+            ("https://github.com/o/r/pull/1", LinkRoute::SystemBrowser),
+            ("http://localhost:4000/t/1", LinkRoute::SystemBrowser),
+            (
+                "https://board.example.com/handoff/abc",
+                LinkRoute::SystemBrowser,
+            ),
+            ("mailto:a@example.com", LinkRoute::Drop),
+            ("file:///etc/hosts", LinkRoute::Drop),
+            ("tauri://localhost/board.html", LinkRoute::Drop),
+            ("javascript:alert(1)", LinkRoute::Drop),
+        ];
+
+        for (requested, expected) in cases {
+            assert_eq!(
+                route_from_native(&parse(requested)),
+                expected,
+                "{requested}"
+            );
+        }
     }
 
     #[test]

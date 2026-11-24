@@ -1,0 +1,44 @@
+[
+  { "pages": [], "boardOnly": false, "path": "/", "kind": "board" },
+  { "pages": [], "boardOnly": false, "path": "/t/k3J9", "kind": "board" },
+  { "pages": [], "boardOnly": false, "path": "/settings/agents", "kind": "board" },
+  { "pages": ["task"], "boardOnly": false, "path": "/t/k3J9", "kind": "native" },
+  { "pages": ["task"], "boardOnly": false, "path": "/t/k3J9?transcript=1", "kind": "native" },
+  { "pages": ["task"], "boardOnly": false, "path": "/t/", "kind": "board" },
+  { "pages": ["task"], "boardOnly": false, "path": "/backlog", "kind": "board" },
+  { "pages": ["task"], "boardOnly": false, "path": "/", "kind": "board" },
+  { "pages": ["task"], "boardOnly": false, "path": "/login/oidc", "kind": "board" },
+  { "pages": ["task"], "boardOnly": true, "path": "/t/k3J9", "kind": "board" },
+  { "pages": ["home", "settings"], "boardOnly": false, "path": "/", "kind": "native" },
+  {
+    "pages": ["home", "settings"],
+    "boardOnly": false,
+    "path": "/settings/machines",
+    "kind": "native"
+  },
+  { "pages": ["home", "settings"], "boardOnly": false, "path": "/backlog/", "kind": "board" },
+  {
+    "pages": ["backlog", "closed", "schedules"],
+    "boardOnly": false,
+    "path": "/backlog",
+    "kind": "native"
+  },
+  {
+    "pages": ["backlog", "closed", "schedules"],
+    "boardOnly": false,
+    "path": "/closed",
+    "kind": "native"
+  },
+  {
+    "pages": ["backlog", "closed", "schedules"],
+    "boardOnly": false,
+    "path": "/schedules",
+    "kind": "native"
+  },
+  {
+    "pages": ["home", "backlog", "closed", "schedules", "task", "settings"],
+    "boardOnly": true,
+    "path": "/",
+    "kind": "board"
+  }
+]

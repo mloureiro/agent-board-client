@@ -14,10 +14,12 @@ use crate::connection;
 use crate::error::ClientError;
 use crate::layout::{self, Slot};
 use crate::link_route::{self, LinkRoute};
+use crate::native_page;
 use crate::notify::{self, ClickTarget, Notice, NotifyLimits};
 use crate::sentinel::{self, HealthReport, Signal};
 use crate::server_url::check_server_url;
 use crate::store::{Server, ServerStore};
+use crate::tab_kind::TabKind;
 use crate::tab_session::{self, TabSessions};
 use crate::tab_state;
 use crate::tabs::{TabSession, HOME};
@@ -32,11 +34,15 @@ pub fn window_label(id: Uuid) -> String {
     format!("server-{id}")
 }
 
-pub fn tab_label(id: Uuid, tab: u64) -> String {
+pub fn tab_label(id: Uuid, tab: u64, kind: TabKind) -> String {
+    let prefix = match kind {
+        TabKind::Board => "board",
+        TabKind::Native => "native",
+    };
     if tab == HOME {
-        format!("board-{id}-home")
+        format!("{prefix}-{id}-home")
     } else {
-        format!("board-{id}-{tab}")
+        format!("{prefix}-{id}-{tab}")
     }
 }
 
@@ -79,23 +85,25 @@ fn open_tab(app: &AppHandle, id: Uuid, path: &str) {
 fn route_new_window(app: &AppHandle, id: Uuid, server_url: &Url, requested: &Url) {
     match link_route::route(server_url, requested) {
         LinkRoute::SameWindow => open_tab(app, id, &path_and_query(requested)),
-        LinkRoute::SystemBrowser => {
-            let target = requested.to_string();
-            std::thread::spawn(move || {
-                if let Err(error) = open::that_detached(target) {
-                    eprintln!(
-                        "could not open a link of server {id} in the system browser: {:?}",
-                        error.kind()
-                    );
-                }
-            });
-        }
+        LinkRoute::SystemBrowser => open_in_system_browser(id, requested),
         LinkRoute::Drop => {}
     }
 }
 
+fn open_in_system_browser(id: Uuid, requested: &Url) {
+    let target = requested.to_string();
+    std::thread::spawn(move || {
+        if let Err(error) = open::that_detached(target) {
+            eprintln!(
+                "could not open a link of server {id} in the system browser: {:?}",
+                error.kind()
+            );
+        }
+    });
+}
+
 fn sender_on_origin(app: &AppHandle, id: Uuid, tab: u64, server_url: &Url) -> bool {
-    app.get_webview(&tab_label(id, tab))
+    app.get_webview(&tab_label(id, tab, TabKind::Board))
         .and_then(|webview| webview.url().ok())
         .is_some_and(|url| url.origin() == server_url.origin())
 }
@@ -175,14 +183,17 @@ fn board_builder(
     let navigation_app = app.clone();
     let window_app = app.clone();
     let window_server = server_url.clone();
-    let builder = WebviewBuilder::new(tab_label(id, tab), WebviewUrl::External(target))
-        .initialization_script(routing_script(role))
-        .initialization_script(include_str!("../scripts/external-links.js"))
-        .on_navigation(move |requested| handle_navigation(&navigation_app, id, tab, requested))
-        .on_new_window(move |requested, _features| {
-            route_new_window(&window_app, id, &window_server, &requested);
-            NewWindowResponse::Deny
-        });
+    let builder = WebviewBuilder::new(
+        tab_label(id, tab, TabKind::Board),
+        WebviewUrl::External(target),
+    )
+    .initialization_script(routing_script(role))
+    .initialization_script(include_str!("../scripts/external-links.js"))
+    .on_navigation(move |requested| handle_navigation(&navigation_app, id, tab, requested))
+    .on_new_window(move |requested, _features| {
+        route_new_window(&window_app, id, &window_server, &requested);
+        NewWindowResponse::Deny
+    });
 
     if tab == HOME {
         return builder.background_throttling(BackgroundThrottlingPolicy::Disabled);
@@ -218,6 +229,50 @@ pub fn add_board_webview(
     target: Url,
 ) -> Result<(), ClientError> {
     let builder = with_own_storage(app, board_builder(app, id, server_url, tab, target), id)?;
+    add_content_webview(app, window, id, tab, builder)
+}
+
+pub fn add_native_webview(
+    app: &AppHandle,
+    window: &Window,
+    server: &Server,
+    tab: u64,
+    path: &str,
+) -> Result<(), ClientError> {
+    let id = server.id;
+    let tabbar_url = app
+        .get_webview(&tab_session::tabbar_label(id))
+        .ok_or(ClientError::NotFound)?
+        .url()?;
+    let entry = native_page::entry_of(&tabbar_url).ok_or(ClientError::NotFound)?;
+
+    let builder = WebviewBuilder::new(
+        tab_label(id, tab, TabKind::Native),
+        WebviewUrl::App(native_page::entry_path(&server.name, path).into()),
+    )
+    .on_navigation(move |requested| native_page::is_app_entry(&entry, requested))
+    .on_new_window(move |requested, _features| {
+        if link_route::route_from_native(&requested) == LinkRoute::SystemBrowser {
+            open_in_system_browser(id, &requested);
+        }
+        NewWindowResponse::Deny
+    });
+    let builder = if tab == HOME {
+        builder.background_throttling(BackgroundThrottlingPolicy::Disabled)
+    } else {
+        builder
+    };
+
+    add_content_webview(app, window, id, tab, with_own_storage(app, builder, id)?)
+}
+
+fn add_content_webview(
+    app: &AppHandle,
+    window: &Window,
+    id: Uuid,
+    tab: u64,
+    builder: BoardWebviewBuilder,
+) -> Result<(), ClientError> {
     let (width, height) = window_size(window)?;
     let banner = banner_shown(app, id);
     let content = layout::bounds(Slot::Content, width, height, banner);
@@ -352,8 +407,14 @@ fn build_window(app: &AppHandle, server: &Server, url: Url) -> Result<(), Client
         _ => {}
     });
 
-    let built = add_tab_bar(app, &window, id)
-        .and_then(|()| add_board_webview(app, &window, id, &url, HOME, url.clone()));
+    let home_kind = app
+        .state::<TabSessions>()
+        .home_kind(id)
+        .unwrap_or(TabKind::Board);
+    let built = add_tab_bar(app, &window, id).and_then(|()| match home_kind {
+        TabKind::Board => add_board_webview(app, &window, id, &url, HOME, url.clone()),
+        TabKind::Native => add_native_webview(app, &window, server, HOME, "/"),
+    });
     if built.is_ok() && selected != HOME {
         let _ = tab_session::apply(app, id, |session| session.select(selected));
     }
@@ -416,4 +477,24 @@ pub fn close(app: &AppHandle, id: Uuid) -> Result<(), ClientError> {
         window.destroy()?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn labels_a_tab_webview_by_its_kind() {
+        let id = Uuid::nil();
+        let cases = [
+            (HOME, TabKind::Board, format!("board-{id}-home")),
+            (3, TabKind::Board, format!("board-{id}-3")),
+            (HOME, TabKind::Native, format!("native-{id}-home")),
+            (3, TabKind::Native, format!("native-{id}-3")),
+        ];
+
+        for (tab, kind, expected) in cases {
+            assert_eq!(tab_label(id, tab, kind), expected, "tab {tab} {kind:?}");
+        }
+    }
 }
